@@ -3,7 +3,10 @@ name = "rag"
 version = "0.1.0"
 description = "RAG monorepo (Python components)"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+  "pydantic>=2.0",
+  "pydantic-settings>=2.0",
+]
 
 [tool.uv]
 dev-dependencies = [
