@@ -1,0 +1,56 @@
+# Docker Compose (Local Development)
+
+This stack provides local infrastructure for the RAG app.
+
+## Services
+
+| Service | Image | Ports | Notes |
+|---|---|---:|---|
+| Postgres | `pgvector/pgvector:pg16` | `5432` | Named volume `postgres_data`; pgvector extension available in image |
+| Redis | `redis:7-alpine` | `6379` | AOF persistence via `redis_data` volume |
+| MinIO | `minio/minio:latest` | `9000` (S3 API), `9001` (console) | `minio_data` volume |
+| MinIO bucket init | `minio/mc:latest` | — | One-shot container; creates `${MINIO_BUCKET:-rag}` after MinIO is healthy |
+| Ollama | `ollama/ollama:latest` | `11434` | `ollama_data` volume; models persist in volume |
+
+All long-running services have healthchecks. MinIO bucket creation waits for MinIO to become healthy.
+
+## Start
+
+```bash
+docker compose up -d
+```
+
+Check status:
+
+```bash
+docker compose ps
+```
+
+## Ollama model pull (documented)
+
+The Ollama service is started by Compose, but the embedding model is **not** pulled automatically (pulls can be large/slow). Pull the model used by this project (see `docs/decisions.md`):
+
+```bash
+docker compose exec ollama ollama pull embeddinggemma2
+```
+
+If your Ollama registry uses a different tag for the selected model, substitute the exact tag (decision record currently specifies `embeddinggemma-2:440m`; confirm the exact Ollama tag with `ollama list` / your Ollama catalog and update the command/docs accordingly).
+
+Verify:
+
+```bash
+docker compose exec ollama ollama list
+curl http://localhost:11434/api/tags
+```
+
+## Environment overrides
+
+Defaults work for local development. You can override via `.env` or shell variables (see `.env.example`): `POSTGRES_*`, `REDIS_PORT`, `MINIO_*`, `MINIO_BUCKET`, `OLLAMA_PORT`.
+
+## Stop / reset
+
+```bash
+docker compose down
+# remove volumes/data
+docker compose down -v
+```
