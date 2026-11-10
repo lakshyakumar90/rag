@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     database_url: str | None = Field(default=None, validation_alias="DATABASE_URL")
     api_key: str | None = Field(default=None, validation_alias="API_KEY")
 
+    # CORS (comma-separated origins, e.g. "http://localhost:3000,https://app.example.com")
+    cors_origins: str = Field(default="", validation_alias="CORS_ORIGINS")
+    cors_allow_credentials: bool = Field(
+        default=False, validation_alias="CORS_ALLOW_CREDENTIALS"
+    )
+
     # CLI mode (local only, off by default, enabled via env flag)
     cli_mode_enabled: bool = Field(
         default=False, validation_alias="CLI_MODE_ENABLED"
@@ -71,6 +77,13 @@ class Settings(BaseSettings):
     @property
     def redis_url(self) -> str:
         return f"redis://{self.redis_host}:{self.redis_port}/0"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        """CORS_ORIGINS as a trimmed list; empty when unset."""
+        return [
+            origin.strip() for origin in self.cors_origins.split(",") if origin.strip()
+        ]
 
 
 @lru_cache(maxsize=1)
