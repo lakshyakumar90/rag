@@ -1,10 +1,12 @@
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.v1.router import router as v1_router
 from core.config import get_settings
+from core.database import dispose_engine
 from core.exceptions import register_exception_handlers
 from core.logging import configure_logging
 from core.middleware import RequestIdMiddleware
@@ -12,11 +14,17 @@ from core.middleware import RequestIdMiddleware
 logger = logging.getLogger(__name__)
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    await dispose_engine()
+
+
 def create_app() -> FastAPI:
     configure_logging()
     settings = get_settings()
 
-    app = FastAPI(title="RAG API", version="0.1.0")
+    app = FastAPI(title="RAG API", version="0.1.0", lifespan=lifespan)
     app.add_middleware(RequestIdMiddleware)
     if settings.cors_origin_list:
         app.add_middleware(

@@ -1,14 +1,19 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Repo-root .env (shared with docker compose). A .env in the current working
+# directory takes precedence when both exist.
+_REPO_ROOT_ENV = Path(__file__).resolve().parents[3] / ".env"
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(_REPO_ROOT_ENV, ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
@@ -34,9 +39,7 @@ class Settings(BaseSettings):
     )
     minio_host: str = Field(default="localhost", validation_alias="MINIO_HOST")
     minio_port: int = Field(default=9000, validation_alias="MINIO_PORT")
-    minio_console_port: int = Field(
-        default=9001, validation_alias="MINIO_CONSOLE_PORT"
-    )
+    minio_console_port: int = Field(default=9001, validation_alias="MINIO_CONSOLE_PORT")
     minio_bucket: str = Field(default="rag", validation_alias="MINIO_BUCKET")
     minio_secure: bool = Field(default=False, validation_alias="MINIO_SECURE")
 
@@ -61,9 +64,7 @@ class Settings(BaseSettings):
     )
 
     # CLI mode (local only, off by default, enabled via env flag)
-    cli_mode_enabled: bool = Field(
-        default=False, validation_alias="CLI_MODE_ENABLED"
-    )
+    cli_mode_enabled: bool = Field(default=False, validation_alias="CLI_MODE_ENABLED")
 
     @property
     def sqlalchemy_database_url(self) -> str:

@@ -47,6 +47,20 @@ curl http://localhost:11434/api/tags
 
 Defaults work for local development. You can override via `.env` or shell variables (see `.env.example`): `POSTGRES_*`, `REDIS_PORT`, `MINIO_*`, `MINIO_BUCKET`, `OLLAMA_PORT`.
 
+The app's `Settings` reads the same `.env` (repo root), so `POSTGRES_*` values stay in sync between Compose and the API.
+
+### Port 5432 already in use
+
+If another PostgreSQL (e.g., a native Windows service) owns 5432, Compose cannot bind it. Set a free port in `.env` instead:
+
+```bash
+# .env
+POSTGRES_PORT=5433
+POSTGRES_HOST=127.0.0.1
+```
+
+Then restart Compose (`docker compose up -d postgres`). `POSTGRES_HOST=127.0.0.1` also avoids a slow `::1` (IPv6) fallback, since Compose publishes the port on IPv4 only.
+
 ## Stop / reset
 
 ```bash
