@@ -57,6 +57,19 @@ class Settings(BaseSettings):
     database_url: str | None = Field(default=None, validation_alias="DATABASE_URL")
     api_key: str | None = Field(default=None, validation_alias="API_KEY")
 
+    # JWT / auth. The secret default is for local development only — override
+    # JWT_SECRET_KEY with a random value in any shared environment.
+    jwt_secret_key: str = Field(
+        default="dev-only-jwt-secret-change-me", validation_alias="JWT_SECRET_KEY"
+    )
+    jwt_algorithm: str = Field(default="HS256", validation_alias="JWT_ALGORITHM")
+    access_token_ttl_minutes: int = Field(
+        default=15, validation_alias="ACCESS_TOKEN_TTL_MINUTES"
+    )
+    refresh_token_ttl_days: int = Field(
+        default=7, validation_alias="REFRESH_TOKEN_TTL_DAYS"
+    )
+
     # CORS (comma-separated origins, e.g. "http://localhost:3000,https://app.example.com")
     cors_origins: str = Field(default="", validation_alias="CORS_ORIGINS")
     cors_allow_credentials: bool = Field(
