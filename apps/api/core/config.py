@@ -60,7 +60,8 @@ class Settings(BaseSettings):
     # JWT / auth. The secret default is for local development only — override
     # JWT_SECRET_KEY with a random value in any shared environment.
     jwt_secret_key: str = Field(
-        default="dev-only-jwt-secret-change-me", validation_alias="JWT_SECRET_KEY"
+        default="dev-only-jwt-secret-change-me-in-non-production",
+        validation_alias="JWT_SECRET_KEY",
     )
     jwt_algorithm: str = Field(default="HS256", validation_alias="JWT_ALGORITHM")
     access_token_ttl_minutes: int = Field(
