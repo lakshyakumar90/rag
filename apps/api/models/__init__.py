@@ -1,5 +1,3 @@
-from sqlalchemy.orm import DeclarativeBase
+from models.base import Base, BaseModel
 
-
-class Base(DeclarativeBase):
-    """Declarative base class for all ORM models (Alembic autogenerate target)."""
+__all__ = ["Base", "BaseModel"]
