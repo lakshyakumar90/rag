@@ -3,6 +3,7 @@ import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -22,6 +23,9 @@ def _create_engine() -> AsyncEngine:
     return create_async_engine(
         get_settings().sqlalchemy_database_url,
         pool_pre_ping=True,
+        # Bound the connection phase so a dead/unreachable server fails fast
+        # instead of hanging the readiness probe (and any request) forever.
+        connect_args={"connect_timeout": 5},
     )
 
 
@@ -47,6 +51,16 @@ async def session_scope() -> AsyncIterator[AsyncSession]:
             await session.rollback()
             raise
         await session.commit()
+
+
+async def check_database_health() -> None:
+    """Verify the database is reachable by running a cheap ``SELECT 1``.
+
+    Raises ``SQLAlchemyError`` (or a DBAPI error wrapped by SQLAlchemy) when
+    the connection cannot be established or the query fails.
+    """
+    async with engine.connect() as connection:
+        await connection.execute(text("SELECT 1"))
 
 
 async def dispose_engine() -> None:
