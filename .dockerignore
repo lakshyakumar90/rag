@@ -1,0 +1,23 @@
+# VCS / local metadata
+.git
+.gitignore
+**/__pycache__
+*.py[cod]
+.mypy_cache
+.ruff_cache
+.pytest_cache
+
+# Local environments and secrets (never bake .env into an image)
+.venv
+.env
+.env.*
+!.env.example
+
+# JS/TS side of the monorepo — not needed by the API image
+node_modules
+apps/web
+packages
+*.tsbuildinfo
+
+# Misc
+*.log
