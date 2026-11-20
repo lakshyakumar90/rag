@@ -11,6 +11,7 @@ from core.database import check_database_health, dispose_engine
 from core.exceptions import register_exception_handlers
 from core.logging import configure_logging
 from core.middleware import RequestIdMiddleware
+from core.redis import close_redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
+    await close_redis_client()
     await dispose_engine()
 
 

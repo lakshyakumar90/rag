@@ -4,6 +4,7 @@ from schemas.auth import (
     RefreshRequest,
     RegisterRequest,
     TokenPair,
+    TokenResponse,
 )
 from schemas.user import UserResponse, UserUpdate
 
@@ -13,6 +14,7 @@ __all__ = [
     "RefreshRequest",
     "RegisterRequest",
     "TokenPair",
+    "TokenResponse",
     "UserResponse",
     "UserUpdate",
 ]

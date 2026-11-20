@@ -38,10 +38,19 @@ class ChangePasswordRequest(BaseModel):
 
 
 class TokenPair(BaseModel):
-    """Access/refresh token pair returned by login and refresh."""
+    """Internal service result: the refresh token is only used to set a cookie."""
 
     access_token: str
     refresh_token: str
+    token_type: Literal["bearer"] = "bearer"
+    expires_in: int
+    refresh_expires_in: int
+
+
+class TokenResponse(BaseModel):
+    """Public token response. The refresh token never reaches the response body."""
+
+    access_token: str
     token_type: Literal["bearer"] = "bearer"
     expires_in: int
     refresh_expires_in: int
