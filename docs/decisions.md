@@ -101,3 +101,31 @@ Implemented under `/api/v1`: `POST /auth/register`, `/auth/login`, `/auth/refres
 - **Dependencies:** added `redis` at runtime; `pytest`, `pytest-asyncio`, and
   `aiosqlite` as dev dependencies, with config in `pyproject.toml`. No schema
   migration was needed.
+
+## Models (3.1)
+
+Added `Workspace`, `Membership`, `Invitation` plus `MembershipRole` /
+`InvitationStatus` enums and migration `f0fe71d60abb` (on top of
+`2e7fd8e217f3`).
+
+- **Workspace:** `name` and `slug` are normalized/validated on every ORM write;
+  slug is unique, lowercase-checked in the DB, and constrained to
+  `a-z0-9` with single hyphens at the app layer (a regex CHECK would not be
+  portable to the SQLite test database). `created_by` references `users.id`
+  with `ON DELETE RESTRICT` — a creator cannot disappear while their workspaces
+  exist — and the relationship uses `passive_deletes` so the database decides.
+- **Membership:** unique per `(user_id, workspace_id)`; both FKs use
+  `ON DELETE CASCADE`. `role` is stored as `VARCHAR(20)` with a named CHECK
+  rather than a native PG enum, so migrations stay simple; a small
+  `StrEnumType` decorator still yields typed enum values on reads.
+- **Invitation:** only the SHA-256 token hash is stored (unique, 64 hex chars),
+  mirroring refresh tokens. Email is normalized like user email; `role`
+  reuses `MembershipRole` (owner is allowed but normal invites use
+  admin/member); `status` is pending/accepted/revoked/expired with a DB default
+  of `pending`. `expires_at` is indexed for expiry sweeps. The workspace FK
+  cascades on delete.
+- **Indexes:** explicit indexes on all FKs plus invitation `email` and
+  `expires_at`; token uniqueness comes from named unique constraints.
+- **Tests** (`apps/api/tests/test_models.py`): slug/email normalization, slug
+  and membership-pair uniqueness, enum round-trips, CHECK enforcement, default
+  status, token-hash uniqueness, and workspace delete cascades.
