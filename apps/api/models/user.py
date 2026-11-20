@@ -6,7 +6,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from models.base import BaseModel
 
 if TYPE_CHECKING:
+    from models.membership import Membership
     from models.refresh_token import RefreshToken
+    from models.workspace import Workspace
 
 
 class User(BaseModel):
@@ -21,6 +23,14 @@ class User(BaseModel):
 
     refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
+    )
+    memberships: Mapped[list["Membership"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    # RESTRICT at the DB level: a creator cannot be deleted while their
+    # workspaces still exist.
+    created_workspaces: Mapped[list["Workspace"]] = relationship(
+        back_populates="creator", passive_deletes=True
     )
 
     __table_args__ = (
