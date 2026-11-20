@@ -13,6 +13,7 @@ dependencies = [
   "alembic>=1.20.1",
   "argon2-cffi>=23.1.0",
   "PyJWT>=2.10.0",
+  "redis>=6.0",
 ]
 
 [dependency-groups]
@@ -21,6 +22,9 @@ dev = [
   "pre-commit>=4.0.0",
   "ruff>=0.15.0",
   "mypy>=1.20.0",
+  "pytest>=8.0",
+  "pytest-asyncio>=0.24",
+  "aiosqlite>=0.21",
 ]
 
 [tool.ruff]
@@ -41,3 +45,10 @@ python_version = "3.12"
 strict = false
 ignore_missing_imports = true
 warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+# Tests import modules as `main`, `core.*`, `api.*` (relative to apps/api).
+pythonpath = ["apps/api"]
+testpaths = ["apps/api/tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

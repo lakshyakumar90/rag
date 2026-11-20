@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -69,6 +70,33 @@ class Settings(BaseSettings):
     )
     refresh_token_ttl_days: int = Field(
         default=7, validation_alias="REFRESH_TOKEN_TTL_DAYS"
+    )
+
+    # Login rate limiting (Redis counters, per client IP and per email)
+    login_rate_limit_max_attempts: int = Field(
+        default=5, validation_alias="LOGIN_RATE_LIMIT_MAX_ATTEMPTS"
+    )
+    login_rate_limit_window_seconds: int = Field(
+        default=300, validation_alias="LOGIN_RATE_LIMIT_WINDOW_SECONDS"
+    )
+    # Only trust X-Forwarded-For when the app sits behind a trusted proxy.
+    trust_proxy_headers: bool = Field(
+        default=False, validation_alias="TRUST_PROXY_HEADERS"
+    )
+
+    # Refresh-token cookie. HttpOnly is always on; Secure defaults on and can
+    # be disabled for local plain-HTTP development.
+    refresh_cookie_name: str = Field(
+        default="refresh_token", validation_alias="REFRESH_COOKIE_NAME"
+    )
+    refresh_cookie_path: str = Field(
+        default="/api/v1/auth", validation_alias="REFRESH_COOKIE_PATH"
+    )
+    refresh_cookie_secure: bool = Field(
+        default=True, validation_alias="REFRESH_COOKIE_SECURE"
+    )
+    refresh_cookie_samesite: Literal["lax", "strict", "none"] = Field(
+        default="lax", validation_alias="REFRESH_COOKIE_SAMESITE"
     )
 
     # CORS (comma-separated origins, e.g. "http://localhost:3000,https://app.example.com")
