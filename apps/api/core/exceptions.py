@@ -11,6 +11,24 @@ from core.logging import request_id_ctx
 logger = logging.getLogger(__name__)
 
 
+class DomainError(Exception):
+    """Base class for expected failures raised by the service layer.
+
+    Services stay framework-agnostic: they raise these typed errors and the
+    HTTP layer translates them into the app's standard error envelope.
+    """
+
+    status_code: int = 400
+    code: str = "DOMAIN_ERROR"
+    message: str = "Request could not be completed"
+    headers: dict[str, str] | None = None
+
+    def __init__(self, message: str | None = None, *, details: Any = None) -> None:
+        super().__init__(message or self.message)
+        self.message = message or self.message
+        self.details = details
+
+
 def _error_payload(
     *,
     code: str,
@@ -61,6 +79,26 @@ async def http_exception_handler(request: Request, exc: Exception) -> JSONRespon
     )
 
 
+def _validation_details(exc: RequestValidationError) -> list[dict[str, Any]]:
+    """Make Pydantic errors JSON-safe without echoing submitted values.
+
+    ``errors()`` may carry exception objects in ``ctx`` (not serializable) and
+    always includes ``input`` — which would leak passwords back to the client.
+    """
+    details: list[dict[str, Any]] = []
+    for error in exc.errors():
+        item: dict[str, Any] = {
+            "type": error.get("type"),
+            "loc": list(error.get("loc", ())),
+            "msg": error.get("msg"),
+        }
+        ctx = error.get("ctx")
+        if ctx:
+            item["ctx"] = {key: str(value) for key, value in ctx.items()}
+        details.append(item)
+    return details
+
+
 async def validation_exception_handler(
     request: Request, exc: Exception
 ) -> JSONResponse:
@@ -72,8 +110,22 @@ async def validation_exception_handler(
             code="VALIDATION_ERROR",
             message="Request validation failed",
             request_id=request_id,
-            details=validation_exc.errors(),
+            details=_validation_details(validation_exc),
         ),
+    )
+
+
+async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    domain_exc = cast(DomainError, exc)
+    return JSONResponse(
+        status_code=domain_exc.status_code,
+        content=_error_payload(
+            code=domain_exc.code,
+            message=domain_exc.message,
+            request_id=_request_id(request),
+            details=domain_exc.details,
+        ),
+        headers=domain_exc.headers,
     )
 
 
@@ -97,4 +149,5 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(HTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
+    app.add_exception_handler(DomainError, domain_error_handler)
     app.add_exception_handler(Exception, unhandled_exception_handler)
