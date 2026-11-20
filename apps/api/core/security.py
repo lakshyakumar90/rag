@@ -14,6 +14,69 @@ from core.config import get_settings
 # the parameters stay consistent and no per-call setup is needed.
 _hasher = PasswordHasher()
 
+# Password policy. A max length bounds hashing cost (and avoids pathological
+# inputs); the denylist catches the most common weak passwords without pulling
+# in a large breached-password dataset.
+MIN_PASSWORD_LENGTH = 8
+MAX_PASSWORD_LENGTH = 128
+_COMMON_PASSWORDS = frozenset(
+    {
+        "password",
+        "password1",
+        "password123",
+        "passw0rd",
+        "p@ssw0rd",
+        "12345678",
+        "123456789",
+        "1234567890",
+        "qwerty",
+        "qwerty123",
+        "abc12345",
+        "letmein",
+        "welcome",
+        "welcome1",
+        "admin123",
+        "changeme",
+        "iloveyou",
+        "monkey",
+        "football",
+        "dragon",
+        "sunshine",
+        "princess",
+    }
+)
+
+
+def validate_password_strength(password: str) -> str:
+    """Return ``password`` if it satisfies the password policy.
+
+    Raises ``ValueError`` with an actionable message otherwise; Pydantic turns
+    that into a 422 validation error on the owning field.
+    """
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise ValueError(
+            f"Password must be at least {MIN_PASSWORD_LENGTH} characters long"
+        )
+    if len(password) > MAX_PASSWORD_LENGTH:
+        raise ValueError(
+            f"Password must be at most {MAX_PASSWORD_LENGTH} characters long"
+        )
+    if password.strip().lower() in _COMMON_PASSWORDS:
+        raise ValueError("Password is too common; choose a different one")
+
+    missing: list[str] = []
+    if not any(char.islower() for char in password):
+        missing.append("a lowercase letter")
+    if not any(char.isupper() for char in password):
+        missing.append("an uppercase letter")
+    if not any(char.isdigit() for char in password):
+        missing.append("a digit")
+    if not any(not char.isalnum() for char in password):
+        missing.append("a special character")
+    if missing:
+        raise ValueError(f"Password must contain {', '.join(missing)}")
+    return password
+
 
 class TokenType(StrEnum):
     ACCESS = "access"
