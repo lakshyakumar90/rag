@@ -99,6 +99,15 @@ class Settings(BaseSettings):
         default="lax", validation_alias="REFRESH_COOKIE_SAMESITE"
     )
 
+    # Invitations. The accept token is returned to the caller because there is
+    # no local mail server; the base URL is used to build a clickable link for
+    # the UI.
+    invitation_ttl_days: int = Field(default=7, validation_alias="INVITATION_TTL_DAYS")
+    invitation_accept_base_url: str = Field(
+        default="http://localhost:3000/invitations/accept",
+        validation_alias="INVITATION_ACCEPT_BASE_URL",
+    )
+
     # CORS (comma-separated origins, e.g. "http://localhost:3000,https://app.example.com")
     cors_origins: str = Field(default="", validation_alias="CORS_ORIGINS")
     cors_allow_credentials: bool = Field(

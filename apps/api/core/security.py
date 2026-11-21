@@ -116,9 +116,14 @@ def needs_rehash(password_hash: str) -> bool:
         return True
 
 
+def hash_token(token: str) -> str:
+    """Deterministic SHA-256 digest for opaque tokens stored in the database."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def hash_refresh_token(token: str) -> str:
     """Deterministic SHA-256 digest for looking up stored refresh tokens."""
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+    return hash_token(token)
 
 
 def _create_token(
