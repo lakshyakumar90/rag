@@ -55,6 +55,8 @@ class DocumentRepository:
                 Document.status,
                 Document.error,
                 Document.page_count,
+                Document.chunks_done,
+                Document.chunks_total,
                 Document.created_at,
                 Document.updated_at,
             )

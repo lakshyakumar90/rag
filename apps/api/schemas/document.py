@@ -21,6 +21,8 @@ class DocumentResponse(BaseModel):
     status: DocumentStatus
     error: str | None
     page_count: int | None
+    chunks_done: int
+    chunks_total: int
     created_at: datetime
     updated_at: datetime
 

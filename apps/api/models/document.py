@@ -19,6 +19,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from models.base import BaseModel
 from models.enums import DocumentStatus, StrEnumType
+from models.types import TSVectorType, VectorType
 
 if TYPE_CHECKING:
     from models.user import User
@@ -28,6 +29,8 @@ MAX_FILENAME_LENGTH = 255
 MAX_SHA256_LENGTH = 64
 MAX_STORAGE_KEY_LENGTH = 512
 MAX_ERROR_LENGTH = 2000
+# Must match Settings.embedding_dim; the migration hard-codes vector(768).
+EMBEDDING_DIM = 768
 
 _status_enum = StrEnumType(DocumentStatus)
 
@@ -65,6 +68,13 @@ class Document(BaseModel):
     # Embedding provenance (global settings for v1).
     embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     embedding_dim: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Ingestion progress (chunks_done advances as chunks are inserted).
+    chunks_total: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    chunks_done: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
 
     uploader: Mapped["User"] = relationship(back_populates="uploaded_documents")
     workspace: Mapped["Workspace"] = relationship(back_populates="documents")
@@ -117,8 +127,12 @@ class DocumentChunk(BaseModel):
     token_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0")
     )
-    # v1 stores vectors as JSON; a pgvector column/index comes with retrieval.
-    embedding: Mapped[list[float] | None] = mapped_column(JSON, nullable=True)
+    # pgvector vector(768) on Postgres; JSON on SQLite for tests.
+    embedding: Mapped[list[float] | None] = mapped_column(
+        VectorType(EMBEDDING_DIM), nullable=True
+    )
+    # Generated/managed by PostgreSQL (to_tsvector of content); Text on SQLite.
+    search_vector: Mapped[str | None] = mapped_column(TSVectorType(), nullable=True)
 
     document: Mapped["Document"] = relationship(back_populates="chunks")
 
