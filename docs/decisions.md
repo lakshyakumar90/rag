@@ -670,3 +670,28 @@ Three strategies in `workers/chunking.py`, all returning the same `Chunk`
   streamed answer with citation chips. All steps are wired through the typed
   client and shared auth/query providers.
 - **Verification:** `pnpm check-types`, `pnpm lint` and `pnpm build` pass.
+
+## UI Redesign (8.4)
+
+- **Direction:** user-pinned minimal developer-console / editorial workspace:
+  pure black in dark, warm off-white in light, one neutral family, one cobalt
+  signal reserved for active state, primary action and focus. Captured in
+  `apps/web/PRODUCT.md`, `DESIGN.md`, `.impeccable/design.json` and a surface
+  brief; no concept roll because the direction was pinned in the brief.
+- **Components:** expanded the local shadcn-style set with Radix Dialog,
+  DropdownMenu, Select, Tabs, Tooltip, Separator and Slot, plus cmdk command
+  palette (⌘K), lucide icons and sonner toasts.
+- **Shell:** a 220px desktop rail (workspace switcher, four nav items, user
+  menu) becomes a sticky top bar plus 64px bottom tabs below 768px; chat's
+  conversation sidebar becomes a bottom sheet and citation panel an edge sheet.
+- **Craft:** ruled full-width rows instead of card grids, status as neutral mono
+  text (no colored pills), skeletons that keep the real row pitch, hydration-safe
+  theme toggles, themed selection/caret/scrollbar, 44px coarse-pointer targets,
+  and one authored entrance animation for streamed content.
+- **Bug found during visual QA:** the typed client prefixed `/api/v1` twice;
+  `authFetch`/upload now detect already-prefixed paths and use the origin only.
+- **Review:** independent finish review found three medium issues (colored
+  status pills, theme-switch hydration issues, 320px composer risk). All were
+  fixed in one batch and scored resolved; final disposition **ship**. Detector
+  clean. Captures live in `apps/web/.impeccable/review/` (desktop/mobile, both
+  themes, plus 320px).
