@@ -16,6 +16,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from models.base import BaseModel
 
 if TYPE_CHECKING:
+    from models.document import Document
     from models.invitation import Invitation
     from models.membership import Membership
     from models.user import User
@@ -44,6 +45,9 @@ class Workspace(BaseModel):
         back_populates="workspace", cascade="all, delete-orphan"
     )
     invitations: Mapped[list["Invitation"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan"
+    )
+    documents: Mapped[list["Document"]] = relationship(
         back_populates="workspace", cascade="all, delete-orphan"
     )
 

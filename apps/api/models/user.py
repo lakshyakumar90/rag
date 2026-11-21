@@ -6,6 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from models.base import BaseModel
 
 if TYPE_CHECKING:
+    from models.document import Document
     from models.membership import Membership
     from models.refresh_token import RefreshToken
     from models.workspace import Workspace
@@ -31,6 +32,10 @@ class User(BaseModel):
     # workspaces still exist.
     created_workspaces: Mapped[list["Workspace"]] = relationship(
         back_populates="creator", passive_deletes=True
+    )
+    # RESTRICT prevents deleting a user who uploaded documents.
+    uploaded_documents: Mapped[list["Document"]] = relationship(
+        back_populates="uploader", passive_deletes=True
     )
 
     __table_args__ = (
