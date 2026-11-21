@@ -129,6 +129,15 @@ class Settings(BaseSettings):
         default=30.0, validation_alias="RERANK_TIMEOUT_SECONDS"
     )
 
+    # Prompting
+    prompt_context_token_budget: int = Field(
+        default=2000, validation_alias="PROMPT_CONTEXT_TOKEN_BUDGET"
+    )
+    chat_max_tokens: int = Field(default=512, validation_alias="CHAT_MAX_TOKENS")
+    chat_default_provider: str | None = Field(
+        default=None, validation_alias="CHAT_DEFAULT_PROVIDER"
+    )
+
     # App / RAG
     database_url: str | None = Field(default=None, validation_alias="DATABASE_URL")
     api_key: str | None = Field(default=None, validation_alias="API_KEY")
