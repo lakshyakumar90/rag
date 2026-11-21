@@ -6,6 +6,7 @@ from arq.worker import Function
 
 from core.config import get_settings
 from core.database import SessionFactory
+from providers.minio import MinioStorageClient
 from providers.queue import INGEST_JOB
 from workers.ingest import ingest_document
 
@@ -30,5 +31,5 @@ class WorkerSettings:
     job_timeout = settings.ingest_job_timeout_seconds + 10
     max_tries = settings.ingest_max_tries
     retry_jobs = True
-    # The worker opens its own DB sessions (no FastAPI request scope).
-    ctx = {"session_factory": SessionFactory}
+    # The worker opens its own DB sessions and storage client (no request scope).
+    ctx = {"session_factory": SessionFactory, "storage_client": MinioStorageClient()}
