@@ -4,6 +4,8 @@ from typing import Any, cast
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from psycopg.errors import ConnectionTimeout
+from sqlalchemy.exc import OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from core.logging import request_id_ctx
@@ -145,9 +147,28 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     )
 
 
+async def database_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    error = cast(OperationalError, exc)
+    if not error.connection_invalidated and not isinstance(
+        error.orig, ConnectionTimeout
+    ):
+        return await unhandled_exception_handler(request, exc)
+    logger.warning("Database connection unavailable", extra={"path": request.url.path})
+    return JSONResponse(
+        status_code=503,
+        headers={"Retry-After": "1"},
+        content=_error_payload(
+            code="DATABASE_UNAVAILABLE",
+            message="The database is temporarily unavailable. Try again shortly.",
+            request_id=_request_id(request),
+        ),
+    )
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(HTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(DomainError, domain_error_handler)
+    app.add_exception_handler(OperationalError, database_error_handler)
     app.add_exception_handler(Exception, unhandled_exception_handler)

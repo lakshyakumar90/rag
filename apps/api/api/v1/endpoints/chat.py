@@ -12,6 +12,8 @@ from api.v1.dependencies import (
     get_chat_service,
 )
 from core.rate_limit import UserRateLimiter
+from providers.cli.registry import create_cli_provider
+from providers.llm.types import ChatMessage, ProviderAPIError
 from schemas import ChatRequest, ChatResponse
 from services import ChatService
 
@@ -44,6 +46,7 @@ async def chat(
             payload.provider,
             payload.conversation_id,
             request.is_disconnected,
+            model=payload.model,
         ):
             yield _sse(event)
 
@@ -73,4 +76,28 @@ async def chat_complete(
         payload.document_ids,
         payload.provider,
         payload.conversation_id,
+    )
+
+
+@router.post("/{workspace_id}/chat/test-provider")
+async def test_chat_provider(
+    payload: ChatRequest,
+    context: MemberContext,
+    limiter: Annotated[UserRateLimiter, Depends(get_chat_rate_limiter)],
+) -> dict[str, bool | str]:
+    await limiter.check(context.user.id)
+    if payload.provider not in {"cli-codex", "cli-opencode"}:
+        return {"ok": False, "detail": "Select Codex or OpenCode."}
+    try:
+        provider = create_cli_provider(payload.provider)
+        completion = await provider.complete(
+            [ChatMessage("system", "Reply with OK. Do not use tools.")],
+            model=payload.model,
+        )
+    except ProviderAPIError as exc:
+        return {"ok": False, "detail": str(exc)}
+    return (
+        {"ok": True, "detail": "Model responded successfully."}
+        if completion.text.strip()
+        else {"ok": False, "detail": "The CLI returned no text."}
     )

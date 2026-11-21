@@ -180,6 +180,8 @@ class DocumentService:
         )
         document.status = DocumentStatus.PENDING
         document.error = None
+        document.ingestion_stage = None
+        document.chunks_embedded = 0
         document.chunks_total = 0
         document.chunks_done = 0
         await record_audit(

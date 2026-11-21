@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -21,6 +22,10 @@ class DocumentResponse(BaseModel):
     status: DocumentStatus
     error: str | None
     page_count: int | None
+    ingestion_stage: (
+        Literal["extracting", "chunking", "embedding", "indexing"] | None
+    ) = None
+    chunks_embedded: int = 0
     chunks_done: int
     chunks_total: int
     created_at: datetime

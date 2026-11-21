@@ -3,7 +3,6 @@
 from collections.abc import Callable
 
 from core.config import get_settings
-from providers.cli.registry import create_cli_provider
 from providers.llm.anthropic import AnthropicLLMProvider
 from providers.llm.base import LLMProvider
 from providers.llm.ollama import OllamaLLMProvider
@@ -42,9 +41,19 @@ register_provider(
     "openai-compatible", lambda **opts: OpenAICompatibleLLMProvider(**opts)
 )
 register_provider("anthropic", lambda **opts: AnthropicLLMProvider(**opts))
+
+
 # Local CLI providers are registered but refuse to run unless explicitly enabled
 # and running on the host (see providers/cli).
+def _create_cli(name: str, model: str | None = None) -> LLMProvider:
+    from providers.cli.registry import create_cli_provider
+
+    provider = create_cli_provider(name)
+    provider.model = model
+    return provider
+
+
 for _cli_name in ("cli-codex", "cli-opencode", "cli-claude"):
     register_provider(
-        _cli_name, lambda name=_cli_name, **opts: create_cli_provider(name)
+        _cli_name, lambda name=_cli_name, **opts: _create_cli(name, **opts)
     )

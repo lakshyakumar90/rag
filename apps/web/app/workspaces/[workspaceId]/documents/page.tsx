@@ -36,19 +36,22 @@ export default function DocumentsPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>();
   const queryClient = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
+  const nextUploadId = useRef(0);
   const [dragging, setDragging] = useState(false);
   const [filter, setFilter] = useState("all");
-  const [uploads, setUploads] = useState<{ name: string; progress: number }[]>([]);
+  const [uploads, setUploads] = useState<{ id: number; name: string; progress: number }[]>([]);
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ["documents", workspaceId, filter],
     queryFn: () => api.documents(workspaceId, filter === "all" ? undefined : filter),
     refetchInterval: (query) => {
       const items = query.state.data?.items ?? [];
-      return items.some((item) => item.status === "pending" || item.status === "processing")
+      if (items.some((item) => item.status === "processing")) return 800;
+      return items.some((item) => item.status === "pending")
         ? 1500
         : false;
     },
+    refetchIntervalInBackground: true,
   });
 
   const invalidate = () =>
@@ -74,7 +77,7 @@ export default function DocumentsPage() {
   async function upload(files: FileList | null) {
     if (!files?.length) return;
     for (const file of Array.from(files)) {
-      const entry = { name: file.name, progress: 0 };
+      const entry = { id: nextUploadId.current++, name: file.name, progress: 0 };
       setUploads((current) => [...current, entry]);
       try {
         await uploadWithProgress<Document>(
@@ -82,7 +85,7 @@ export default function DocumentsPage() {
           file,
           (progress) =>
             setUploads((current) =>
-              current.map((item) => (item === entry ? { ...item, progress } : item)),
+              current.map((item) => (item.id === entry.id ? { ...item, progress } : item)),
             ),
         );
         toast.success(`${file.name} uploaded`);
@@ -90,7 +93,7 @@ export default function DocumentsPage() {
       } catch (error) {
         toast.error(error instanceof Error ? error.message : `Upload failed: ${file.name}`);
       } finally {
-        setUploads((current) => current.filter((item) => item !== entry));
+        setUploads((current) => current.filter((item) => item.id !== entry.id));
       }
     }
   }
@@ -134,7 +137,7 @@ export default function DocumentsPage() {
       {uploads.length ? (
         <div className="result-in flex flex-col gap-2">
           {uploads.map((item) => (
-            <div key={item.name} className="flex items-center gap-3 text-[12px]">
+            <div key={item.id} className="flex items-center gap-3 text-[12px]">
               <span className="w-40 truncate sm:w-64">{item.name}</span>
               <div className="h-1 flex-1 rounded-full bg-muted">
                 <div
@@ -183,6 +186,15 @@ export default function DocumentsPage() {
         <div className="result-in">
           {data.items.map((document) => {
             const status = STATUS[document.status] ?? document.status;
+            const active = document.status === "pending" || document.status === "processing";
+            const stage = document.status === "pending" ? "Queued" : {
+              extracting: "Reading file",
+              chunking: "Splitting text into chunks",
+              embedding: "Creating embeddings",
+              indexing: "Saving the search index",
+            }[document.ingestion_stage ?? "extracting"];
+            const hasCount = document.ingestion_stage === "embedding" && document.chunks_total > 0;
+
             return (
               <div
                 key={document.id}
@@ -192,16 +204,21 @@ export default function DocumentsPage() {
                   <p className="truncate text-[13px] font-medium">{document.filename}</p>
                   <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
                     {(document.size / 1024).toFixed(1)} KB · {document.page_count ?? "—"} pages ·{" "}
-                    {document.chunks_done}/{document.chunks_total} chunks
+                    {document.status === "ready" ? `${document.chunks_done} indexed chunks` : status}
                   </p>
-                  {(document.status === "pending" || document.status === "processing") &&
-                  document.chunks_total > 0 ? (
-                    <div className="mt-2 h-0.5 w-full max-w-xs rounded-full bg-muted">
-                      <div
-                        className="h-0.5 rounded-full bg-foreground"
-                        style={{
-                          width: `${Math.round((document.chunks_done / document.chunks_total) * 100)}%`,
-                        }}
+                  {active ? (
+                    <div className="mt-2 grid max-w-xs gap-1.5">
+                      <div className="flex flex-wrap justify-between gap-x-3 text-xs">
+                        <span>{stage}</span>
+                        {hasCount && <span className="tabular-nums text-muted-foreground">
+                          {document.chunks_embedded} / {document.chunks_total} embedded
+                        </span>}
+                      </div>
+                      <progress
+                        aria-label={`${document.filename}: ${stage}`}
+                        className="h-1.5 w-full accent-accent"
+                        max={hasCount ? document.chunks_total : undefined}
+                        value={hasCount ? document.chunks_embedded : undefined}
                       />
                     </div>
                   ) : null}
@@ -236,6 +253,7 @@ export default function DocumentsPage() {
                         variant="ghost"
                         size="icon"
                         aria-label={`Re-index ${document.filename}`}
+                        disabled={document.status === "processing" || retry.isPending}
                         onClick={() => retry.mutate(document.id)}
                       >
                         <RotateCw size={15} />

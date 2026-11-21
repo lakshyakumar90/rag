@@ -67,6 +67,7 @@ class FeedbackService:
                 Message.role == "assistant",
                 Conversation.workspace_id == context.workspace.id,
             )
+            .with_for_update(of=Message)
         )
         message = result.scalar_one_or_none()
         if message is None:

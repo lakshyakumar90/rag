@@ -5,7 +5,7 @@ import logging
 import uuid
 
 from arq import Retry
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.config import get_settings
@@ -16,6 +16,23 @@ from workers.chunking import chunk_document
 from workers.extraction import ExtractionError, extract
 
 logger = logging.getLogger(__name__)
+
+
+async def _update_progress(
+    factory: async_sessionmaker[AsyncSession], document_id: uuid.UUID, **progress
+) -> bool:
+    async with factory() as session:
+        result = await session.execute(
+            update(Document)
+            .where(
+                Document.id == document_id, Document.status == DocumentStatus.PROCESSING
+            )
+            .values(**progress)
+            .returning(Document.id)
+        )
+        active = result.scalar_one_or_none() is not None
+        await session.commit()
+        return active
 
 
 async def _process(
@@ -35,12 +52,16 @@ async def _process(
         mime_type = document.mime_type
         document.status = DocumentStatus.PROCESSING
         document.error = None
+        document.ingestion_stage = "extracting"
+        document.chunks_embedded = 0
         document.chunks_total = 0
         document.chunks_done = 0
         await session.commit()
 
     data = await storage.download(str(workspace_id), storage_key)
     result = await asyncio.to_thread(extract, data, mime_type)
+    if not await _update_progress(factory, document_id, ingestion_stage="chunking"):
+        return
     settings = get_settings()
     chunks = await asyncio.to_thread(
         chunk_document,
@@ -49,15 +70,33 @@ async def _process(
         settings.chunk_target_tokens,
         settings.chunk_overlap_tokens,
     )
-    vectors = (
-        await embeddings.embed_documents([chunk.text for chunk in chunks])
-        if chunks
-        else []
-    )
+    if not await _update_progress(
+        factory,
+        document_id,
+        ingestion_stage="embedding",
+        chunks_total=len(chunks),
+        page_count=result.page_count,
+    ):
+        return
+    vectors: list[list[float]] = []
+    embed_batch_size = max(1, settings.embedding_batch_size)
+    for start in range(0, len(chunks), embed_batch_size):
+        batch = chunks[start : start + embed_batch_size]
+        vectors.extend(
+            await embeddings.embed_documents([chunk.text for chunk in batch])
+        )
+        if not await _update_progress(
+            factory, document_id, chunks_embedded=len(vectors)
+        ):
+            return
+    if not await _update_progress(factory, document_id, ingestion_stage="indexing"):
+        return
 
     async with factory() as session:
         document = await session.get(Document, document_id)
         if document is None:
+            return
+        if document.status != DocumentStatus.PROCESSING:
             return
         # Idempotent: reprocessing replaces any previous chunks.
         await session.execute(
@@ -97,6 +136,7 @@ async def _process(
         document.page_count = result.page_count
         document.embedding_model = settings.ollama_embedding_model
         document.embedding_dim = embeddings.dimension
+        document.ingestion_stage = None
         document.status = DocumentStatus.READY
         await session.commit()
 
@@ -111,6 +151,7 @@ async def _record_failure(
         )
         document = result.scalar_one_or_none()
         if document is not None:
+            document.ingestion_stage = None
             document.status = DocumentStatus.FAILED
             document.error = f"{type(error).__name__}: {error}"[:2000]
             await session.commit()

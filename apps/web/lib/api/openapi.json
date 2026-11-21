@@ -1523,6 +1523,61 @@
         }
       }
     },
+    "/api/v1/providers/cli/models/{provider}": {
+      "get": {
+        "tags": [
+          "cli"
+        ],
+        "summary": "Get Cli Models",
+        "operationId": "get_cli_models_api_v1_providers_cli_models__provider__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "cli-codex",
+                "cli-opencode"
+              ],
+              "type": "string",
+              "title": "Provider"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response Get Cli Models Api V1 Providers Cli Models  Provider  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/workspaces/{workspace_id}/search": {
       "post": {
         "tags": [
@@ -1678,6 +1733,75 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ChatResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/chat/test-provider": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Test Chat Provider",
+        "operationId": "test_chat_provider_api_v1_workspaces__workspace_id__chat_test_provider_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "title": "Response Test Chat Provider Api V1 Workspaces  Workspace Id  Chat Test Provider Post"
                 }
               }
             }
@@ -2706,6 +2830,19 @@
             ],
             "title": "Document Ids"
           },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160,
+                "pattern": "^[\\w./:+#-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
           "provider": {
             "anyOf": [
               {
@@ -3026,6 +3163,28 @@
               }
             ],
             "title": "Page Count"
+          },
+          "ingestion_stage": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "extracting",
+                  "chunking",
+                  "embedding",
+                  "indexing"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ingestion Stage"
+          },
+          "chunks_embedded": {
+            "type": "integer",
+            "title": "Chunks Embedded",
+            "default": 0
           },
           "chunks_done": {
             "type": "integer",

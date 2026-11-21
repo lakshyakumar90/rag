@@ -16,10 +16,11 @@ export function DialogContent({
   side = "center",
   ...props
 }: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
-  side?: "center" | "right" | "bottom";
+  side?: "center" | "top" | "right" | "bottom";
 }) {
   const placement = {
     center: "left-1/2 top-1/2 w-[min(92vw,520px)] -translate-x-1/2 -translate-y-1/2 rounded-[10px]",
+    top: "left-1/2 top-[clamp(0.75rem,12dvh,6rem)] w-[min(calc(100vw-1.5rem),520px)] -translate-x-1/2 rounded-[10px]",
     right: "right-0 top-0 h-full w-[min(92vw,380px)] rounded-l-[12px] data-[state=open]:animate-none",
     bottom:
       "bottom-0 left-0 max-h-[85vh] w-full rounded-t-[14px] data-[state=open]:result-in",

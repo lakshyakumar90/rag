@@ -1,8 +1,12 @@
 """Status endpoint for local CLI providers (never runs a model)."""
 
+from typing import Literal
+
 from fastapi import APIRouter
 
+from api.v1.dependencies import CurrentUser
 from providers.cli import cli_status
+from providers.cli.status import cli_models
 from schemas import CLIStatusResponse, CLIToolStatusResponse
 
 router = APIRouter(prefix="/providers/cli", tags=["cli"])
@@ -23,3 +27,10 @@ async def get_cli_status() -> CLIStatusResponse:
             for name, tool in status.tools.items()
         },
     )
+
+
+@router.get("/models/{provider}")
+async def get_cli_models(
+    provider: Literal["cli-codex", "cli-opencode"], current_user: CurrentUser
+) -> list[str]:
+    return await cli_models(provider)

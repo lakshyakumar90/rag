@@ -19,6 +19,7 @@ class CodexCLIProvider(CLIProvider):
     def argv(self, prompt: str, opts: dict[str, Any]) -> list[str]:
         # No --full-auto, --approve-for-me or writable sandbox; the read-only
         # sandbox is the default and is repeated here explicitly.
+        model = opts.get("model") or self._settings.cli_codex_model
         return [
             "codex",
             "exec",
@@ -28,6 +29,12 @@ class CodexCLIProvider(CLIProvider):
             "read-only",
             "--skip-git-repo-check",
             "--ignore-user-config",
+            "--disable",
+            "shell_tool",
+            "--disable",
+            "unified_exec",
+            *([f"--model={model}"] if model else []),
+            "--",
             prompt,
         ]
 

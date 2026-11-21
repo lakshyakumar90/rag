@@ -19,6 +19,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
     <AuthGuard>
       <AppShell
         workspaceId={workspaceId}
+        fillViewport={segment === "chat"}
         title={titles[segment] ?? "Workspace"}
         description={
           segment === "documents"

@@ -14,9 +14,11 @@ import { Badge } from "../../../../components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../../../../components/ui/dialog";
 import {
   api,
+  requestPath,
   type Conversation,
   type SearchResponse,
 } from "../../../../lib/api/client";
+import { ApiError } from "../../../../lib/auth-client";
 import type { ChatEvent } from "../../../../lib/chat-stream";
 import { streamChat } from "../../../../lib/chat-stream";
 import type { components } from "../../../../lib/api/schema";
@@ -48,6 +50,25 @@ export default function ChatPage() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState("");
+  const [provider, setProvider] = useState("");
+  const [model, setModel] = useState("");
+  const cliStatus = useQuery({ queryKey: ["cli-status"], queryFn: api.cliStatus });
+  const models = useQuery({
+    queryKey: ["cli-models", provider],
+    queryFn: () => requestPath<string[]>(`/api/v1/providers/cli/models/${provider}`),
+    enabled: Boolean(provider),
+    staleTime: 300_000,
+  });
+  const connection = useMutation({
+    mutationFn: () => requestPath<{ ok: boolean; detail: string }>(
+      `/api/v1/workspaces/${workspaceId}/chat/test-provider`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: "Connection test", provider, model: model.trim() || null }),
+      },
+    ),
+  });
   const [streaming, setStreaming] = useState(false);
   const [snippets, setSnippets] = useState<Record<string, SearchResponse["items"][number]>>({});
   const [activeSource, setActiveSource] = useState<SourceRef | null>(null);
@@ -68,7 +89,7 @@ export default function ChatPage() {
   }, [conversations, conversationId]);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages]);
 
   const refreshConversations = () =>
@@ -110,7 +131,12 @@ export default function ChatPage() {
       setComment("");
       toast.success("Thanks for the feedback");
     },
-    onError: () => toast.error("Could not save feedback"),
+    retry: (attempt, error) =>
+      attempt === 0 && error instanceof ApiError && error.status === 503,
+    retryDelay: 1200,
+    onError: (error) => toast.error(
+      error instanceof ApiError ? error.message : "Could not save feedback",
+    ),
   });
 
   async function loadConversation(id: string) {
@@ -133,15 +159,30 @@ export default function ChatPage() {
 
   async function send() {
     const query = input.trim();
-    if (!query || streaming) return;
-    setInput("");
+    if (!query || abortRef.current) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setStreaming(true);
     let conversation = conversationId;
-    if (!conversation) {
-      const created = await api.createConversation(workspaceId);
-      conversation = created.id;
-      setConversationId(conversation);
-      refreshConversations();
+    try {
+      if (!conversation) {
+        const created = await api.createConversation(workspaceId);
+        conversation = created.id;
+        setConversationId(conversation);
+        refreshConversations();
+      }
+      if (controller.signal.aborted) {
+        setStreaming(false);
+        abortRef.current = null;
+        return;
+      }
+    } catch {
+      setStreaming(false);
+      abortRef.current = null;
+      toast.error("Could not start a conversation");
+      return;
     }
+    setInput("");
 
     const userId = `user-${Date.now()}`;
     const assistantId = `assistant-${Date.now()}`;
@@ -151,19 +192,13 @@ export default function ChatPage() {
       { id: assistantId, role: "assistant", content: "", citations: [], streaming: true },
     ]);
 
-    try {
-      const search = await api.search(workspaceId, query);
+    void api.search(workspaceId, query).then((search) => {
       setSnippets((current) => ({
         ...current,
         ...Object.fromEntries(search.items.map((item) => [item.chunk_id, item])),
       }));
-    } catch {
-      // Non-fatal: the answer still streams without preview snippets.
-    }
+    }).catch(() => undefined);
 
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setStreaming(true);
     const onEvent = (event: ChatEvent) => {
       if (event.type === "sources") {
         setMessages((current) =>
@@ -185,12 +220,27 @@ export default function ChatPage() {
     };
 
     try {
-      await streamChat(
+      const completed = await streamChat(
         workspaceId,
-        { query, conversation_id: conversation },
+        { query, conversation_id: conversation, provider: provider || undefined, model: provider && model.trim() ? model.trim() : undefined },
         onEvent,
         controller.signal,
       );
+      if (completed) {
+        const saved = await api.messages(workspaceId, conversation).catch(() => null);
+        const answer = saved?.at(-1);
+        if (
+          answer?.role === "assistant" &&
+          answer.content === completed.answer &&
+          saved?.at(-2)?.content === query
+        ) {
+          setMessages((current) => current.map((message) =>
+            message.id === assistantId
+              ? { ...message, id: answer.id, content: answer.content, citations: completed.citations, streaming: false }
+              : message,
+          ));
+        }
+      }
     } catch (error) {
       if (!controller.signal.aborted) {
         toast.error(error instanceof Error ? error.message : "Streaming failed");
@@ -216,7 +266,6 @@ export default function ChatPage() {
         // Already stopped.
       }
     }
-    setStreaming(false);
   }
 
   async function regenerate() {
@@ -277,18 +326,18 @@ export default function ChatPage() {
   );
 
   return (
-    <div className="flex gap-0 lg:gap-6">
-      <aside className="hidden w-[220px] shrink-0 border-r border-border pr-4 lg:block">
+    <div className="flex h-full min-h-0 gap-0 lg:gap-5">
+      <aside className="hidden w-[200px] shrink-0 overflow-y-auto border-r border-border pr-4 lg:block">
         {conversationList}
       </aside>
 
-      <section className="flex h-[calc(100dvh-230px)] min-h-[420px] min-w-0 flex-1 flex-col md:h-[calc(100dvh-210px)]">
-        <div className="mb-3 flex items-center gap-2 lg:hidden">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="mb-2 flex shrink-0 items-center gap-2 lg:hidden">
           <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
             <Button variant="outline" size="sm" onClick={() => setHistoryOpen(true)}>
               <History size={14} /> Conversations
             </Button>
-            <DialogContent side="bottom" className="p-4">
+            <DialogContent side="bottom" className="overflow-y-auto overscroll-contain p-4">
               <DialogTitle>Conversations</DialogTitle>
               <DialogDescription className="mb-3 text-[12px] text-muted-foreground">
                 Pick a thread or start a new one.
@@ -298,7 +347,43 @@ export default function ChatPage() {
           </Dialog>
         </div>
 
-        <div ref={scrollRef} className="flex flex-1 flex-col gap-5 overflow-y-auto pb-6">
+        <div className="mb-4 flex shrink-0 flex-wrap items-center gap-2 border-b border-border pb-3">
+          <select
+            aria-label="Chat provider"
+            className="h-8 rounded-md border border-border bg-surface px-2 text-xs"
+            value={provider}
+            disabled={streaming || connection.isPending}
+            onChange={(event) => { setProvider(event.target.value); setModel(""); connection.reset(); }}
+          >
+            <option value="">Default provider</option>
+            <option value="cli-codex" disabled={!cliStatus.data?.tools["cli-codex"]?.installed}>Codex CLI</option>
+            <option value="cli-opencode" disabled={!cliStatus.data?.tools["cli-opencode"]?.installed}>OpenCode CLI</option>
+          </select>
+          {provider && <>
+            <Input
+              aria-label="Model ID"
+              list="cli-model-options"
+              className="h-8 min-w-0 flex-1"
+              placeholder={provider === "cli-opencode" ? "provider/model (optional)" : "Model ID (optional)"}
+              value={model}
+              maxLength={160}
+              disabled={streaming || connection.isPending}
+              onChange={(event) => { setModel(event.target.value); connection.reset(); }}
+            />
+            <datalist id="cli-model-options">
+              {models.data?.map((id) => <option key={id} value={id} />)}
+            </datalist>
+            <Button type="button" variant="outline" size="sm" disabled={streaming || connection.isPending} onClick={() => connection.mutate()}>
+              {connection.isPending ? "Testing…" : "Test connection"}
+            </Button>
+            {(connection.data || connection.error) && (
+              <span role="status" className={`basis-full text-xs ${connection.data?.ok ? "text-muted-foreground" : "text-destructive"}`}>
+                {connection.data?.detail ?? connection.error?.message}
+              </span>
+            )}
+          </>}
+        </div>
+        <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overscroll-contain px-1 pb-3">
           {messages.length ? (
             messages.map((message) => (
               <article
@@ -335,6 +420,7 @@ export default function ChatPage() {
                     <button
                       type="button"
                       aria-label="Good answer"
+                      disabled={feedback.isPending}
                       title="Good answer"
                       onClick={() =>
                         feedback.mutate({ messageId: message.id, vote: "up" })
@@ -348,6 +434,7 @@ export default function ChatPage() {
                     <button
                       type="button"
                       aria-label="Bad answer"
+                      disabled={feedback.isPending}
                       title="Bad answer"
                       onClick={() =>
                         feedback.mutate({ messageId: message.id, vote: "down" })
@@ -361,6 +448,7 @@ export default function ChatPage() {
                     <button
                       type="button"
                       aria-label="Add feedback comment"
+                      disabled={feedback.isPending}
                       title="Add a comment"
                       onClick={() => {
                         setCommentTarget(message.id);
@@ -376,7 +464,7 @@ export default function ChatPage() {
               </article>
             ))
           ) : (
-            <div className="flex flex-1 flex-col items-center justify-center gap-2 py-20 text-center">
+            <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 py-4 text-center">
               <p className="text-[14px]">Ask anything about your documents.</p>
               <p className="max-w-sm text-[12px] text-muted-foreground">
                 Answers come only from the files in this workspace, with citations you can open.
@@ -386,7 +474,7 @@ export default function ChatPage() {
         </div>
 
         <form
-          className="sticky bottom-0 flex flex-wrap items-center gap-2 border-t border-border bg-background py-3"
+          className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border bg-background pt-2"
           onSubmit={(event) => {
             event.preventDefault();
             void send();

@@ -107,14 +107,17 @@ function UserMenu() {
 function CommandPalette({
   workspaceId,
   trigger,
+  shortcut = false,
 }: {
   workspaceId: string;
   trigger: React.ReactNode;
+  shortcut?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
+    if (!shortcut) return;
     const handler = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
@@ -123,24 +126,25 @@ function CommandPalette({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, []);
+  }, [shortcut]);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="top-[18%] p-0">
+      <DialogContent side="top" className="p-0">
         <DialogTitle className="sr-only">Command menu</DialogTitle>
         <DialogDescription className="sr-only">Navigate the workspace</DialogDescription>
         <Command className="rounded-[10px]" loop>
-          <div className="flex items-center gap-2 border-b border-border px-4">
+          <div className="flex items-center gap-2 border-b border-border pl-4 pr-14">
             <Search size={15} className="text-muted-foreground" />
             <Command.Input
               autoFocus
               placeholder="Go to…"
-              className="h-12 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
+              aria-label="Search workspace pages"
+              className="h-12 min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
             />
           </div>
-          <Command.List className="max-h-72 overflow-y-auto p-2">
+          <Command.List className="max-h-[min(18rem,calc(100dvh-9rem))] overflow-y-auto overscroll-contain p-2">
             <Command.Empty className="px-3 py-6 text-center text-[13px] text-muted-foreground">
               No results
             </Command.Empty>
@@ -182,11 +186,13 @@ export function AppShell({
   workspaceId,
   title,
   description,
+  fillViewport = false,
   children,
 }: {
   workspaceId: string;
   title: string;
   description?: string;
+  fillViewport?: boolean;
   children: React.ReactNode;
 }) {
   const params = useParams<{ workspaceId: string }>();
@@ -246,8 +252,13 @@ export function AppShell({
         />
       </header>
 
-      <main className="px-4 pb-24 pt-6 md:ml-[220px] md:px-8 md:pb-10 md:pt-8">
-        <div className="mb-7 flex flex-wrap items-end justify-between gap-3">
+      <main className={cn(
+        "px-4 md:ml-[220px] md:px-8",
+        fillViewport
+          ? "flex h-[calc(100dvh-3.5rem)] min-h-0 flex-col pb-[4.5rem] pt-4 md:h-dvh md:pb-3 md:pt-6"
+          : "pb-24 pt-6 md:pb-10 md:pt-8",
+      )}>
+        <div className={cn("flex shrink-0 flex-wrap items-end justify-between gap-3", fillViewport ? "mb-3" : "mb-7")}>
           <div>
             <h1 className="text-[22px] font-semibold leading-tight tracking-[-0.025em] md:text-[26px]">
               {title}
@@ -258,6 +269,7 @@ export function AppShell({
           </div>
           <CommandPalette
             workspaceId={current}
+            shortcut
             trigger={
               <Button variant="outline" size="sm" className="hidden md:inline-flex">
                 <Search size={13} /> Search
@@ -266,7 +278,7 @@ export function AppShell({
             }
           />
         </div>
-        {children}
+        {fillViewport ? <div className="min-h-0 flex-1">{children}</div> : children}
       </main>
 
       {/* Mobile bottom navigation */}

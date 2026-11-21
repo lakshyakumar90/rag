@@ -37,6 +37,10 @@ def _model_name(provider_name: str) -> str | None:
         return settings.anthropic_model
     if provider_name == "ollama":
         return settings.ollama_llm_model
+    if provider_name == "cli-codex":
+        return settings.cli_codex_model
+    if provider_name == "cli-opencode":
+        return settings.cli_opencode_model or provider_name
     if provider_name.startswith("cli-"):
         return provider_name
     return None
@@ -203,8 +207,9 @@ class ChatService:
         new_title: str | None,
         prompt_text: str = "",
         answerable: bool | None = None,
+        model: str | None = None,
     ) -> None:
-        model = _model_name(provider_name)
+        model = model or _model_name(provider_name)
         tokens_estimated = usage is None
         input_tokens = usage.input_tokens if usage else count_tokens(prompt_text)
         output_tokens = usage.output_tokens if usage else count_tokens(answer)
@@ -244,6 +249,7 @@ class ChatService:
         provider_name: str | None = None,
         conversation_id: uuid.UUID | None = None,
         is_disconnected: Callable[[], Awaitable[bool]] | None = None,
+        model: str | None = None,
     ) -> AsyncIterator[dict]:
         """Yield normalized SSE events, persisting the answer even on disconnect."""
         settings = get_settings()
@@ -253,6 +259,9 @@ class ChatService:
         conversations = self._conversations
         conversation = None
         history: list = []
+        model_options = (
+            {"model": model} if model and provider_name.startswith("cli-") else {}
+        )
         provider: LLMProvider | None = None
         collected: list[str] = []
         citations: list[Citation] = []
@@ -275,7 +284,7 @@ class ChatService:
 
         try:
             if conversation is not None and conversations is not None:
-                provider = create_llm_provider(provider_name)
+                provider = create_llm_provider(provider_name, **model_options)
                 effective_query = await conversations.rewrite_query(
                     history, query, provider
                 )
@@ -333,7 +342,7 @@ class ChatService:
             )
             prompt_text = "\n".join(message.content for message in messages)
             if provider is None:
-                provider = create_llm_provider(provider_name)
+                provider = create_llm_provider(provider_name, **model_options)
             if (
                 conversation is not None
                 and conversations is not None
@@ -423,6 +432,7 @@ class ChatService:
                     new_title,
                     prompt_text,
                     answerable=final_text != "I don't know",
+                    model=model_options.get("model"),
                 )
             if conversation is not None:
                 active_streams.pop(conversation.id, None)

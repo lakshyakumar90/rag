@@ -108,6 +108,12 @@ class Settings(BaseSettings):
     enable_cli_providers: bool = Field(
         default=False, validation_alias="ENABLE_CLI_PROVIDERS"
     )
+    cli_codex_model: str = Field(
+        default="gpt-6-luna", validation_alias="CLI_CODEX_MODEL"
+    )
+    cli_opencode_model: str | None = Field(
+        default=None, validation_alias="CLI_OPENCODE_MODEL"
+    )
     cli_timeout_seconds: float = Field(
         default=120.0, validation_alias="CLI_TIMEOUT_SECONDS"
     )

@@ -26,7 +26,17 @@ class OpenCodeCLIProvider(CLIProvider):
     def argv(self, prompt: str, opts: dict[str, Any]) -> list[str]:
         # Deliberately no --auto (auto-approve). --standalone avoids the shared
         # background service and its global config/plugins.
-        return ["opencode", "run", "--format", "json", "--standalone", prompt]
+        model = opts.get("model") or self._settings.cli_opencode_model
+        return [
+            "opencode",
+            "run",
+            "--format",
+            "json",
+            "--standalone",
+            *([f"--model={model}"] if model else []),
+            "--",
+            prompt,
+        ]
 
     def config_files(self) -> dict[str, str]:
         return {"opencode.json": json.dumps(_DENY_ALL)}
@@ -49,6 +59,13 @@ class OpenCodeCLIProvider(CLIProvider):
             return [Finish(reason="stop")]
         if kind == "error":
             error = event.get("error") or {}
-            message = error.get("message") if isinstance(error, dict) else error
-            return [Error(message=str(message or "opencode failed"), code=str(kind))]
+            status = error.get("status") if isinstance(error, dict) else None
+            message = {
+                401: "OpenCode authentication failed for this model.",
+                402: "Insufficient OpenCode credits for this model.",
+                403: "OpenCode access was denied for this model.",
+                410: "This OpenCode model is no longer available.",
+                429: "OpenCode reached the usage limit for this model.",
+            }.get(status, "OpenCode could not complete the request.")
+            return [Error(message=message, code=str(kind))]
         return []

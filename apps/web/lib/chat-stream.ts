@@ -51,6 +51,7 @@ export async function streamChat(
     conversation_id?: string;
     document_ids?: string[];
     provider?: string;
+    model?: string;
   },
   onEvent: (event: ChatEvent) => void,
   signal?: AbortSignal,

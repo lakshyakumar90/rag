@@ -11,6 +11,7 @@ class ChatRequest(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
     top_k: int | None = Field(default=None, ge=1, le=50)
     document_ids: list[uuid.UUID] | None = None
+    model: str | None = Field(default=None, max_length=160, pattern=r"^[\w./:+#-]+$")
     provider: str | None = Field(default=None, max_length=50)
     conversation_id: uuid.UUID | None = None
 

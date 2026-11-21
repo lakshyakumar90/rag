@@ -35,6 +35,7 @@ export class ApiError extends Error {
 }
 
 let accessToken: string | null = null;
+let refreshRequest: Promise<boolean> | undefined;
 const listeners = new Set<() => void>();
 
 export function getAccessToken(): string | null {
@@ -102,18 +103,24 @@ export async function register(
 }
 
 /** Silent refresh. Returns false when there is no usable session. */
-export async function refresh(): Promise<boolean> {
+export function refresh(): Promise<boolean> {
+  refreshRequest ??= refreshSession().finally(() => {
+    refreshRequest = undefined;
+  });
+  return refreshRequest;
+}
+
+async function refreshSession(): Promise<boolean> {
+  const priorToken = getAccessToken();
   const response = await fetch(`${API_BASE}/auth/refresh`, {
     method: "POST",
     credentials: "include",
   });
-  if (!response.ok) {
-    setAccessToken(null);
-    return false;
+  const tokens = response.ok ? ((await response.json()) as TokenResponse) : null;
+  if (getAccessToken() === priorToken) {
+    setAccessToken(tokens?.access_token ?? null);
   }
-  const tokens = (await response.json()) as TokenResponse;
-  setAccessToken(tokens.access_token);
-  return true;
+  return Boolean(getAccessToken());
 }
 
 export async function logout(): Promise<void> {

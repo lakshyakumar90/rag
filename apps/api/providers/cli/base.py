@@ -8,6 +8,7 @@ import asyncio
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
@@ -42,6 +43,39 @@ def running_in_container() -> bool:
     ).lower() in ("1", "true", "yes")
 
 
+def native_command(command: list[str]) -> list[str]:
+    if os.name != "nt":
+        return command
+    resolved = shutil.which(command[0])
+    if resolved and Path(resolved).suffix.lower() == ".exe":
+        return [resolved, *command[1:]]
+    npm = Path(os.environ.get("APPDATA", "")) / "npm" / "node_modules"
+    if command[0] == "codex":
+        candidates = (npm / "@openai/codex/node_modules").glob(
+            "@openai/codex-win32-*/vendor/*/bin/codex.exe"
+        )
+    elif command[0] == "opencode":
+        candidates = iter((npm / "@opencode/cli/bin/opencode.exe",))
+    else:
+        candidates = iter(())
+    executable = next((path for path in candidates if path.is_file()), None)
+    if executable is None:
+        raise FileNotFoundError(command[0])
+    return [str(executable), *command[1:]]
+
+
+async def run_windows(command: list[str], timeout: float, cwd: str | None = None):
+    return await asyncio.to_thread(
+        subprocess.run,
+        native_command(command),
+        cwd=cwd,
+        timeout=timeout,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+
+
 def build_prompt(messages: Messages) -> str:
     """Flatten normalized messages into one prompt.
 
@@ -69,6 +103,7 @@ class CLIProvider(ABC):
 
     def __init__(self, settings: Settings | None = None) -> None:
         self._settings = settings or get_settings()
+        self.model: str | None = None
         if not self._settings.enable_cli_providers:
             raise CLIProvidersDisabledError("ENABLE_CLI_PROVIDERS is not enabled")
         if running_in_container():
@@ -106,31 +141,44 @@ class CLIProvider(ABC):
             try:
                 for name, content in self.config_files().items():
                     (Path(workdir) / name).write_text(content, encoding="utf-8")
+                opts.setdefault("model", self.model)
                 command = self.argv(build_prompt(messages), opts)
-                process = await asyncio.create_subprocess_exec(
-                    *command,
-                    cwd=workdir,
-                    stdin=asyncio.subprocess.DEVNULL,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
                 try:
-                    stdout, _stderr = await asyncio.wait_for(
-                        process.communicate(),
-                        timeout=self._settings.cli_timeout_seconds,
+                    process = await asyncio.create_subprocess_exec(
+                        *command,
+                        cwd=workdir,
+                        stdin=asyncio.subprocess.DEVNULL,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
                     )
-                except (TimeoutError, asyncio.CancelledError):
-                    await self._kill(process)
-                    yield Error(message=f"{self.name} timed out", code="timeout")
-                    return
+                except (NotImplementedError, FileNotFoundError):
+                    if os.name != "nt":
+                        yield Error(message=f"{self.name} could not start")
+                        return
+                    try:
+                        result = await run_windows(
+                            command, self._settings.cli_timeout_seconds, workdir
+                        )
+                    except subprocess.TimeoutExpired:
+                        yield Error(message=f"{self.name} timed out", code="timeout")
+                        return
+                    except OSError:
+                        yield Error(message=f"{self.name} could not start")
+                        return
+                    stdout, returncode = result.stdout, result.returncode
+                else:
+                    try:
+                        stdout, _stderr = await asyncio.wait_for(
+                            process.communicate(),
+                            timeout=self._settings.cli_timeout_seconds,
+                        )
+                    except (TimeoutError, asyncio.CancelledError):
+                        await self._kill(process)
+                        yield Error(message=f"{self.name} timed out", code="timeout")
+                        return
+                    returncode = process.returncode
 
-                if process.returncode not in (0, None):
-                    yield Error(
-                        message=f"{self.name} exited with code {process.returncode}",
-                        code="process_error",
-                    )
-                    return
-
+                failed = returncode not in (0, None)
                 emitted_finish = False
                 for line in stdout.decode(errors="replace").splitlines():
                     if not line.strip():
@@ -138,15 +186,27 @@ class CLIProvider(ABC):
                     try:
                         event = json.loads(line)
                     except json.JSONDecodeError:
+                        if failed:
+                            continue
                         yield Error(message="invalid structured output from CLI")
                         return
                     if not isinstance(event, dict):
                         continue
                     for item in self.parse_event(event):
+                        if isinstance(item, Error):
+                            yield item
+                            return
+                        if failed:
+                            continue
                         if isinstance(item, Finish):
                             emitted_finish = True
                         yield item
-                if not emitted_finish:
+                if failed:
+                    yield Error(
+                        message=f"{self.name} exited with code {returncode}",
+                        code="process_error",
+                    )
+                elif not emitted_finish:
                     yield Finish(reason="stop")
             finally:
                 shutil.rmtree(workdir, ignore_errors=True)

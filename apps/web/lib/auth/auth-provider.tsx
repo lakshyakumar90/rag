@@ -8,6 +8,7 @@ import {
   getAccessToken,
   login as apiLogin,
   logout as apiLogout,
+  refresh,
   register as apiRegister,
   subscribeAccessToken,
 } from "../auth-client";
@@ -33,9 +34,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    setToken(getAccessToken());
-    setReady(true);
-    return subscribeAccessToken(() => setToken(getAccessToken()));
+    let active = true;
+    const unsubscribe = subscribeAccessToken(() => setToken(getAccessToken()));
+    const session = getAccessToken() ? Promise.resolve(true) : refresh();
+    void session.catch(() => false).finally(() => {
+      if (active) {
+        setToken(getAccessToken());
+        setReady(true);
+      }
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, []);
 
   const {

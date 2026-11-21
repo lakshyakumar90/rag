@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import (
     JSON,
     CheckConstraint,
+    FetchedValue,
     ForeignKey,
     Index,
     Integer,
@@ -68,7 +69,11 @@ class Document(BaseModel):
     # Embedding provenance (global settings for v1).
     embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     embedding_dim: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Ingestion progress (chunks_done advances as chunks are inserted).
+    # Embedding progress is committed separately from the atomic chunk replacement.
+    ingestion_stage: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    chunks_embedded: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
     chunks_total: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0")
     )
@@ -132,7 +137,9 @@ class DocumentChunk(BaseModel):
         VectorType(EMBEDDING_DIM), nullable=True
     )
     # Generated/managed by PostgreSQL (to_tsvector of content); Text on SQLite.
-    search_vector: Mapped[str | None] = mapped_column(TSVectorType(), nullable=True)
+    search_vector: Mapped[str | None] = mapped_column(
+        TSVectorType(), nullable=True, server_default=FetchedValue()
+    )
 
     document: Mapped["Document"] = relationship(back_populates="chunks")
 
