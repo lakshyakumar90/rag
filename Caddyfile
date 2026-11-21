@@ -1,0 +1,23 @@
+{
+	# Local/production-behind-TLS-terminator mode. Set auto_https on and add a
+	# domain matcher if Caddy should obtain its own certificates.
+	auto_https off
+}
+
+:80 {
+	# A cheap liveness target for the container healthcheck.
+	handle /health {
+		respond "ok" 200
+	}
+
+	# Everything under /api/* belongs to FastAPI; the websocket/SSE upgrade
+	# headers are forwarded by reverse_proxy automatically.
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	# The Next.js app handles all other paths (including invitation links).
+	handle {
+		reverse_proxy web:3000
+	}
+}

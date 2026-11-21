@@ -9,6 +9,10 @@ RUN pnpm install --no-frozen-lockfile
 
 # ---- build: Next.js standalone bundle ----
 FROM deps AS builder
+ARG NEXT_PUBLIC_API_BASE_URL=http://localhost/api/v1
+ARG NEXT_PUBLIC_WEB_URL=http://localhost
+ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL} \
+    NEXT_PUBLIC_WEB_URL=${NEXT_PUBLIC_WEB_URL}
 RUN pnpm --filter web build
 
 # ---- runtime: non-root, standalone server ----

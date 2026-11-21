@@ -16,7 +16,12 @@ x-api-env: &api-env
   REDIS_HOST: redis
   REDIS_PORT: 6379
   MINIO_HOST: minio
-  MINIO_PORT: 9000
+  # S3-compatible endpoint listens on 4566 inside the Compose network;
+  # the host-side port stays 9000 for local processes.
+  MINIO_PORT: 4566
+  MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+  MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+  MINIO_BUCKET: ${MINIO_BUCKET:-rag}
 
 services:
   postgres:
@@ -55,42 +60,49 @@ services:
     restart: unless-stopped
 
   minio:
-    image: minio/minio:latest
+    # MinIO's community images were retired from public registries, so the
+    # dev stack uses LocalStack's S3 service. The app still uses the MinIO SDK.
+    image: localstack/localstack:latest
     container_name: rag-minio
-    command: ["server", "/data", "--console-address", ":9001"]
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      SERVICES: s3
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
     ports:
-      - "127.0.0.1:${MINIO_PORT:-9000}:9000"
-      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "127.0.0.1:${MINIO_PORT:-9000}:4566"
     volumes:
-      - minio_data:/data
+      - minio_data:/var/lib/localstack
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live >/dev/null || wget -qO- http://localhost:9000/minio/health/live >/dev/null"]
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:4566/_localstack/health').read()"
       interval: 5s
       timeout: 5s
       retries: 10
-      start_period: 10s
+      start_period: 15s
     restart: unless-stopped
 
   minio-create-bucket:
-    image: minio/mc:latest
+    image: localstack/localstack:latest
     container_name: rag-minio-create-bucket
     depends_on:
       minio:
         condition: service_healthy
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       MINIO_BUCKET: ${MINIO_BUCKET:-rag}
     entrypoint:
       - /bin/sh
       - -c
       - |
-        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
-        mc mb --ignore-existing "local/$$MINIO_BUCKET"
-        echo "MinIO bucket ready: $$MINIO_BUCKET"
+        aws --endpoint-url http://minio:4566 \
+          s3api create-bucket --bucket "$$MINIO_BUCKET" || true
+        echo "S3 bucket ready: $$MINIO_BUCKET"
     restart: "no"
 
   ollama:

@@ -8,11 +8,11 @@ This stack provides local infrastructure for the RAG app.
 |---|---|---:|---|
 | Postgres | `pgvector/pgvector:pg16` | `5432` | Named volume `postgres_data`; pgvector extension available in image |
 | Redis | `redis:7-alpine` | `6379` | AOF persistence via `redis_data` volume |
-| MinIO | `minio/minio:latest` | `9000` (S3 API), `9001` (console) | `minio_data` volume |
-| MinIO bucket init | `minio/mc:latest` | — | One-shot container; creates `${MINIO_BUCKET:-rag}` after MinIO is healthy |
+| Object storage (S3) | `localstack/localstack:latest` | `9000` on host → `4566` in the network | `minio_data` volume; no console port |
+| Bucket init | `localstack/localstack:latest` | — | One-shot container; creates `${MINIO_BUCKET:-rag}` with `aws` after the service is healthy |
 | Ollama | `ollama/ollama:latest` | `11434` | `ollama_data` volume; models persist in volume |
 
-All long-running services have healthchecks. MinIO bucket creation waits for MinIO to become healthy.
+All long-running services have healthchecks. Bucket creation waits for the S3 service to become healthy. MinIO's community images were retired from the public registries, so the stack uses LocalStack's S3 API; the application still talks to it with the MinIO SDK (`MINIO_HOST=minio`, container port `4566`).
 
 ## Start
 
@@ -31,7 +31,7 @@ docker compose ps
 The Ollama service is started by Compose, but the embedding model is **not** pulled automatically (pulls can be large/slow). Pull the model used by this project (see `docs/decisions.md`):
 
 ```bash
-docker compose exec ollama ollama pull embeddinggemma2
+docker compose exec ollama ollama pull embeddinggemma-2:440m
 ```
 
 If your Ollama registry uses a different tag for the selected model, substitute the exact tag (decision record currently specifies `embeddinggemma-2:440m`; confirm the exact Ollama tag with `ollama list` / your Ollama catalog and update the command/docs accordingly).

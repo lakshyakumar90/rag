@@ -1,0 +1,263 @@
+name: rag-prod
+
+# Production-style stack: one public entry point (Caddy), no internal ports
+# published to the host. Secrets come exclusively from .env (see
+# scripts/generate_secrets.py). Run:
+#   docker compose -f docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.prod.yml --profile seed run --rm seed
+
+x-api-env: &api-env
+  POSTGRES_USER: ${POSTGRES_USER:-rag}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+  POSTGRES_DB: ${POSTGRES_DB:-rag}
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: 5432
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+  MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+  MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set in .env}
+  MINIO_HOST: minio
+  MINIO_PORT: 4566
+  MINIO_BUCKET: ${MINIO_BUCKET:-rag}
+  JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set in .env}
+  LLM_MASTER_KEY: ${LLM_MASTER_KEY:?LLM_MASTER_KEY must be set in .env}
+  LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+  OLLAMA_BASE_URL: http://ollama:11434
+  OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-embeddinggemma-2:440m}
+  OLLAMA_LLM_MODEL: ${OLLAMA_LLM_MODEL:-llama3.2:latest}
+  INVITATION_ACCEPT_BASE_URL: ${INVITATION_ACCEPT_BASE_URL:-http://localhost/invitations/accept}
+  # Caddy terminates the proxy, so forwarded headers are trusted.
+  TRUST_PROXY_HEADERS: "true"
+  # Set to true once Caddy serves HTTPS (a real domain + auto_https).
+  REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE:-false}
+  # Deliberately disabled: see README "CLI mode warning".
+  ENABLE_CLI_PROVIDERS: "false"
+  CLI_MODE_ENABLED: "false"
+  LOCAL_MODE_ENABLED: "false"
+
+x-api-build: &api-build
+  context: .
+  dockerfile: apps/api/Dockerfile
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: rag-caddy
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost/api/v1}
+        NEXT_PUBLIC_WEB_URL: ${NEXT_PUBLIC_WEB_URL:-http://localhost}
+    image: rag-web:prod
+    expose:
+      - "3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  migrate:
+    build: *api-build
+    image: rag-api:prod
+    environment: *api-env
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build: *api-build
+    image: rag-api:prod
+    environment: *api-env
+    expose:
+      - "8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    restart: unless-stopped
+
+  worker:
+    build: *api-build
+    image: rag-api:prod
+    environment: *api-env
+    command: ["arq", "workers.settings.WorkerSettings"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rag}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-rag}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # S3-compatible object storage. The app talks to it through the MinIO SDK;
+  # LocalStack is used because MinIO's community images were retired from the
+  # public registries. Swap in any S3 endpoint by changing MINIO_HOST/PORT.
+  minio:
+    image: localstack/localstack:latest
+    environment:
+      SERVICES: s3
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set in .env}
+    volumes:
+      - minio_data:/var/lib/localstack
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:4566/_localstack/health').read()"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    restart: unless-stopped
+
+  minio-init:
+    image: localstack/localstack:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set in .env}
+      MINIO_BUCKET: ${MINIO_BUCKET:-rag}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        aws --endpoint-url http://minio:4566 \
+          s3api create-bucket --bucket "$$MINIO_BUCKET" || true
+        echo "S3 bucket ready: $$MINIO_BUCKET"
+    restart: "no"
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        ollama pull "$${OLLAMA_EMBEDDING_MODEL:-embeddinggemma-2:440m}" || \
+          echo "embedding model pull failed; check OLLAMA_EMBEDDING_MODEL"
+        ollama pull "$${OLLAMA_LLM_MODEL:-llama3.2:latest}" || \
+          echo "chat model pull failed; check OLLAMA_LLM_MODEL"
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-embeddinggemma-2:440m}
+      OLLAMA_LLM_MODEL: ${OLLAMA_LLM_MODEL:-llama3.2:latest}
+    restart: "no"
+
+  seed:
+    profiles: ["seed"]
+    build: *api-build
+    image: rag-api:prod
+    environment: *api-env
+    volumes:
+      - ./scripts/seed_demo.py:/app/seed_demo.py:ro
+    command: ["python", "/app/seed_demo.py"]
+    depends_on:
+      api:
+        condition: service_healthy
+      ollama-pull:
+        condition: service_completed_successfully
+    restart: "no"
+
+volumes:
+  caddy_data:
+  caddy_config:
+  postgres_data:
+  redis_data:
+  minio_data:
+  ollama_data:
