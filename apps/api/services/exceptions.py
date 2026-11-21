@@ -1,5 +1,7 @@
 """Domain-level errors raised by services, mapped to HTTP by core.exceptions."""
 
+import uuid
+
 from core.exceptions import DomainError
 
 _BEARER_HEADER = {"WWW-Authenticate": "Bearer"}
@@ -78,6 +80,47 @@ class OwnerRequiredError(DomainError):
     status_code = 403
     code = "OWNER_REQUIRED"
     message = "Only a workspace owner can perform this action"
+
+
+class FileTooLargeError(DomainError):
+    status_code = 413
+    code = "FILE_TOO_LARGE"
+    message = "The uploaded file exceeds the size limit"
+
+    def __init__(self, max_bytes: int) -> None:
+        super().__init__(self.message)
+        self.details = {"max_size_bytes": max_bytes}
+
+
+class UnsupportedFileTypeError(DomainError):
+    status_code = 415
+    code = "UNSUPPORTED_FILE_TYPE"
+    message = "File type is not allowed or does not match the file content"
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+
+
+class DuplicateDocumentError(DomainError):
+    status_code = 409
+    code = "DUPLICATE_DOCUMENT"
+    message = "This file has already been uploaded to this workspace"
+
+    def __init__(self, document_id: uuid.UUID) -> None:
+        super().__init__(self.message)
+        self.details = {"document_id": str(document_id)}
+
+
+class DocumentNotFoundError(DomainError):
+    status_code = 404
+    code = "DOCUMENT_NOT_FOUND"
+    message = "Document not found"
+
+
+class StorageUnavailableError(DomainError):
+    status_code = 503
+    code = "STORAGE_UNAVAILABLE"
+    message = "Object storage is unavailable; please try again later"
 
 
 class InsufficientRoleError(DomainError):

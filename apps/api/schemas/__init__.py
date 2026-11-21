@@ -6,6 +6,7 @@ from schemas.auth import (
     TokenPair,
     TokenResponse,
 )
+from schemas.document import DocumentPage, DocumentResponse, DownloadUrlResponse
 from schemas.user import UserResponse, UserUpdate
 from schemas.workspace import (
     InvitationAcceptRequest,
@@ -21,6 +22,9 @@ from schemas.workspace import (
 
 __all__ = [
     "ChangePasswordRequest",
+    "DocumentPage",
+    "DocumentResponse",
+    "DownloadUrlResponse",
     "InvitationAcceptRequest",
     "InvitationCreate",
     "InvitationCreatedResponse",
