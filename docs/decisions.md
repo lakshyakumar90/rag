@@ -415,3 +415,27 @@ Three strategies in `workers/chunking.py`, all returning the same `Chunk`
   event ordering/aggregation, error events, option mapping, registry built-ins
   and custom providers. 8 new tests; 92 total pass. HTTP is mocked; no live
   model call is needed for the interface.
+
+## Adapters (6.2)
+
+- **OpenAI-compatible adapter** (`providers/llm/openai_compat.py`): configurable
+  `OPENAI_BASE_URL`/`OPENAI_API_KEY`/`OPENAI_MODEL` via `POST
+  /chat/completions`, so the same adapter covers OpenAI, Gemini's compatible
+  endpoint, Ollama's `/v1`, OpenRouter and Groq. SSE is parsed by hand
+  (`providers/llm/sse.py` handles comments, multi-line `data:` and `[DONE]`);
+  text deltas, usage and finish are normalized, with finish emitted last.
+- **Anthropic adapter** (`providers/llm/anthropic.py`): `POST /v1/messages` with
+  `x-api-key` and `anthropic-version`; system messages are folded into the
+  top-level `system` field. Its own event types (`message_start`,
+  `content_block_delta`, `message_delta`, `message_stop`) map to the same
+  normalized deltas/usage/finish (`end_turn`→stop, `max_tokens`→length).
+- **Errors:** provider HTTP/API failures map to `AuthenticationError`,
+  `RateLimitError` (preserving `Retry-After`), `ContextLengthError` and
+  `ProviderAPIError` (`providers/llm/errors.py`), instead of leaking httpx or
+  provider-specific exceptions. Transport failures still emit `Error` events.
+- **Registry:** adds `openai`, `openai-compatible` and `anthropic` factories,
+  all selectable through `LLM_PROVIDER`.
+- **Tests** (`apps/api/tests/test_llm_adapters.py`): SSE parsing, error mapping,
+  both adapters' event ordering/payloads/headers, system extraction, HTTP
+  error mapping, and factory construction. 8 new tests; 100 total pass. All HTTP
+  is mocked; no API keys or live endpoints are required.
