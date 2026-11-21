@@ -365,3 +365,29 @@ Three strategies in `workers/chunking.py`, all returning the same `Chunk`
   5xx and timeout. Worker tests verify vectors are persisted. 9 new tests;
   79 total pass. (Live Ollama is running here, but the installed model cannot
   start because the `llama-server` binary is missing, so HTTP is mocked in tests.)
+
+## Storage & Indexes (5.5)
+
+- **Vector column:** `document_chunks.embedding` is now a `vector(768)`
+  (matching `EMBEDDING_DIM`) via a `VectorType` TypeDecorator that emits
+  pgvector on Postgres and JSON on SQLite, so tests still run without a PG
+  server. Migration `65223e6f8aab` converts existing JSON vectors with
+  `embedding::text::vector(768)`.
+- **Indexes:** partial HNSW index with `vector_cosine_ops` on non-null vectors,
+  and a GIN index on a generated `search_vector tsvector` column
+  (`to_tsvector('english', content)`). Both created with `IF NOT EXISTS`.
+  `TSVectorType` maps to TSVECTOR on PG and Text on SQLite (where tests write a
+  simple lowercase token string instead).
+- **Batched writes + progress:** `documents` gains `chunks_total`/`chunks_done`.
+  The worker deletes old chunks, sets the totals, inserts in batches of
+  `CHUNK_INSERT_BATCH_SIZE` (100) with `flush()` after each batch — all in one
+  transaction — advances `chunks_done`, then sets status `ready` and commits.
+  A failure rolls the whole thing back, so no half-ingested document is ready.
+- **Re-index:** `POST /workspaces/{id}/documents/{doc_id}/reindex` (owner/admin)
+  deletes chunks, clears the error/progress, sets status `pending`, and
+  enqueues a fresh `ingest_document` job. The chunk delete is filtered by both
+  document and workspace id, preserving tenant isolation.
+- **Tests** (`apps/api/tests/test_storage.py`): batched inserts and progress,
+  vector/tsvector columns on SQLite, re-index reset/enqueue, re-index role and
+  cross-tenant rules, and an offline Alembic SQL check for `vector(768)`,
+  HNSW/cosine and GIN/tsvector. 5 new tests; 84 total pass.
