@@ -207,3 +207,41 @@ All routes are under `/api/v1` and require a Bearer access token:
   Also covers cross-workspace target ids (404 `MEMBER_NOT_FOUND`), member vs
   owner vs admin role checks, and unknown workspace (404). 5 new tests;
   35 total pass.
+
+## File Upload & Storage (Phase 4)
+
+- **Models:** `Document` (`workspace_id`, `uploaded_by`, filename, mime_type,
+  size, sha256, storage_key, status, error, page_count) and a minimal
+  `DocumentChunk` table so "delete cascades to chunks" is real. Embeddings and
+  real chunking belong to a later phase; `page_count` stays null for now.
+  Migration `800b87a0f86f` adds both tables with `ON DELETE CASCADE` FKs and
+  a `(workspace_id, sha256)` index.
+- **Storage:** `providers/storage.py` defines a `StorageClient` protocol;
+  `providers/minio.py` implements it with the MinIO SDK via `to_thread`, a
+  lazily-ensured bucket, and a defensive check that keys start with
+  `<workspace_id>/`. Tests inject an in-memory fake via
+  `get_storage_client`. Added `minio` + `python-multipart` dependencies.
+- **Validation:** allowed extensions PDF/DOCX/TXT/MD; the client-provided
+  content type is ignored. Magic bytes decide the real type (`%PDF-`, ZIP +
+  `word/document.xml` for DOCX, UTF-8/no NUL for text) and must match the
+  extension → 415 `UNSUPPORTED_FILE_TYPE`. Size is enforced while streaming
+  (default 25 MB) → 413 `FILE_TOO_LARGE` with `max_size_bytes`.
+- **Filenames/keys:** sanitized to a safe basename (both separators handled,
+  control chars removed); stored under `<workspace_id>/<uuid>` with no
+  client-controlled path. Duplicate sha256 within a workspace → 409
+  `DUPLICATE_DOCUMENT` with the existing id; failed uploads are excluded so a
+  retry is possible.
+- **Lifecycle:** upload writes a `pending` row, then stores bytes and marks it
+  `ready`; storage failure marks the row `failed` and returns 503. Delete
+  removes the object first (so a storage failure never orphans the row),
+  then the row and its chunks. A presigned-URL endpoint is provided for reads.
+- **Endpoints:** `POST/GET /workspaces/{id}/documents`, `GET/DELETE
+  /documents/{doc_id}`, `GET /documents/{doc_id}/url`; pagination via
+  `skip`/`limit` and `?status=` filter. Members may view; owners/admins may
+  upload/delete (reusing `require_role`). All reads/writes are workspace_id
+  filtered; cross-tenant access returns 403.
+- **Tests** (`apps/api/tests/test_documents.py`): round-trip, storage key
+  layout, pagination/status filter, oversize, wrong magic bytes/non-DOCX ZIP,
+  all four allowed types, duplicate detection scoped per workspace, role
+  rules, cross-tenant denial on every endpoint, chunk cascade, 404s. 10 new
+  tests; 45 total pass.
