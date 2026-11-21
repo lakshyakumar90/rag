@@ -464,3 +464,39 @@ Three strategies in `workers/chunking.py`, all returning the same `Chunk`
   master-key requirement, URL blocking/local-mode, CRUD with no key leakage
   (also checked via caplog), cross-user 404s, successful and sanitized-failure
   connection tests. 8 new tests; 108 total pass.
+
+## CLI Provider (6.4)
+
+**Docs studied (current, 2026-11-21):**
+- Codex: `codex exec --json` emits JSONL (`item.completed` with
+  `item.type=agent_message`, `turn.completed` with usage). Read-only sandbox is
+  the default; `--full-auto` is deprecated in favour of explicit sandbox flags.
+  Also `--ephemeral`, `--skip-git-repo-check` (temp cwd is not a git repo) and
+  `--ignore-user-config` to avoid user config/MCP servers.
+- OpenCode: `opencode run --format json` emits JSONL (`text`, `step_finish`,
+  `finish`, `error`). `--auto` auto-approves permissions, so it is never used;
+  `--standalone` avoids the shared background service.
+- Claude Code: `claude -p --output-format stream-json` emits `assistant`,
+  `result` and `error` events. `--tools ""`, `--disallowedTools "*"`,
+  `--permission-prompts none` and `--strict-mcp-config` remove tools and deny
+  prompts; `--dangerously-skip-permissions` is never used.
+
+- **Safety:** `asyncio.create_subprocess_exec` (never a shell), a fresh temp cwd
+  per call (removed in `finally`), no auto-approve or writable-sandbox flags,
+  a shared concurrency semaphore, hard timeout with process termination, and
+  structured JSONL parsing only — stderr and scraped text are never used.
+- **Docker decision:** CLI providers require the host's binaries and login, so
+  the backend must run on the host. The API refuses to construct a CLI provider
+  inside a container; a host bridge via `host.docker.internal` is the future
+  option and is explicitly not implemented. README includes the warning.
+- **Status endpoint:** `GET /api/v1/providers/cli/status` reports enabled,
+  container state and per-tool installed/logged-in flags (read-only probes;
+  raw probe output is never returned).
+- **Prompt injection:** document text is wrapped in `<untrusted>` markers as
+  data, and the real boundary is no tools + read-only + empty cwd. A test feeds
+  a "run calc" payload and verifies no command event becomes a text delta and
+  no dangerous flag is passed.
+- **Tests** (`apps/api/tests/test_cli_providers.py`): disabled-by-default and
+  container guard, argv safety for all three, structured parsers, identical
+  streamed text from all three formats, timeout cleanup, injection resistance
+  and status endpoint. 15 new tests; 123 total pass.
