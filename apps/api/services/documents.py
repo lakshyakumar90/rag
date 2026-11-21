@@ -18,6 +18,7 @@ from providers.queue import JobQueue
 from providers.storage import StorageClient
 from repositories import DocumentRepository
 from schemas import DocumentPage, DocumentResponse, DownloadUrlResponse
+from services.audit import record as record_audit
 from services.exceptions import (
     DocumentNotFoundError,
     DuplicateDocumentError,
@@ -104,6 +105,15 @@ class DocumentService:
                 "could not enqueue ingestion for document %s: %s", document.id, exc
             )
 
+        await record_audit(
+            self._session,
+            context.user,
+            "document.uploaded",
+            workspace_id=workspace_id,
+            target_type="document",
+            target_id=document.id,
+        )
+        await self._session.commit()
         # updated_at has onupdate=func.now() and is expired by the flush.
         await self._session.refresh(document)
         return DocumentResponse.model_validate(document)
@@ -141,6 +151,14 @@ class DocumentService:
         except StorageError as exc:
             raise StorageUnavailableError() from exc
         await self._documents.delete(document, workspace_id)
+        await record_audit(
+            self._session,
+            context.user,
+            "document.deleted",
+            workspace_id=workspace_id,
+            target_type="document",
+            target_id=document_id,
+        )
         await self._session.commit()
 
     async def reindex(
@@ -164,6 +182,14 @@ class DocumentService:
         document.error = None
         document.chunks_total = 0
         document.chunks_done = 0
+        await record_audit(
+            self._session,
+            context.user,
+            "document.reindexed",
+            workspace_id=workspace_id,
+            target_type="document",
+            target_id=document_id,
+        )
         await self._session.commit()
 
         try:

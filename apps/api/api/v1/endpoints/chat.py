@@ -6,7 +6,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
-from api.v1.dependencies import MemberContext, get_chat_service
+from api.v1.dependencies import (
+    MemberContext,
+    get_chat_rate_limiter,
+    get_chat_service,
+)
+from core.rate_limit import UserRateLimiter
 from schemas import ChatRequest, ChatResponse
 from services import ChatService
 
@@ -26,7 +31,10 @@ async def chat(
     request: Request,
     context: MemberContext,
     service: Annotated[ChatService, Depends(get_chat_service)],
+    limiter: Annotated[UserRateLimiter, Depends(get_chat_rate_limiter)],
 ) -> StreamingResponse:
+    await limiter.check(context.user.id)
+
     async def events():
         async for event in service.stream_answer(
             context,
@@ -55,7 +63,9 @@ async def chat_complete(
     payload: ChatRequest,
     context: MemberContext,
     service: Annotated[ChatService, Depends(get_chat_service)],
+    limiter: Annotated[UserRateLimiter, Depends(get_chat_rate_limiter)],
 ) -> ChatResponse:
+    await limiter.check(context.user.id)
     return await service.answer(
         context,
         payload.query,

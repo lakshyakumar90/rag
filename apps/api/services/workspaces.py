@@ -40,6 +40,7 @@ from schemas import (
     WorkspaceResponse,
     WorkspaceUpdate,
 )
+from services.audit import record as record_audit
 from services.exceptions import (
     AlreadyMemberError,
     InvitationEmailMismatchError,
@@ -157,6 +158,14 @@ class WorkspaceService:
         return self._response(workspace, context.role)
 
     async def delete(self, context: WorkspaceContext) -> None:
+        await record_audit(
+            self._session,
+            context.user,
+            "workspace.deleted",
+            workspace_id=context.workspace.id,
+            target_type="workspace",
+            target_id=context.workspace.id,
+        )
         await self._workspaces.delete(context.workspace, context.workspace.id)
         await self._session.commit()
 
@@ -267,7 +276,17 @@ class WorkspaceService:
             and await self._memberships.count_owners(workspace_id) <= 1
         ):
             raise LastOwnerError()
+        previous_role = target.role
         target.role = payload.role
+        await record_audit(
+            self._session,
+            context.user,
+            "member.role_changed",
+            workspace_id=workspace_id,
+            target_type="user",
+            target_id=target_user_id,
+            details={"from": str(previous_role), "to": str(payload.role)},
+        )
         await self._session.commit()
 
         user = await self._session.get(User, target_user_id)
@@ -296,6 +315,15 @@ class WorkspaceService:
         ):
             raise LastOwnerError()
         await self._memberships.delete(target, workspace_id)
+        await record_audit(
+            self._session,
+            context.user,
+            "member.removed",
+            workspace_id=workspace_id,
+            target_type="user",
+            target_id=target_user_id,
+            details={"role": str(target.role)},
+        )
         await self._session.commit()
 
     @staticmethod

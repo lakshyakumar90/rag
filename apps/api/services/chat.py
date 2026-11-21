@@ -178,6 +178,7 @@ class ChatService:
                 usage,
                 latency,
                 new_title,
+                answerable=answer_text != "I don't know",
             )
 
         return ChatResponse(
@@ -201,6 +202,7 @@ class ChatService:
         latency: int,
         new_title: str | None,
         prompt_text: str = "",
+        answerable: bool | None = None,
     ) -> None:
         model = _model_name(provider_name)
         tokens_estimated = usage is None
@@ -227,6 +229,7 @@ class ChatService:
             output_tokens=output_tokens,
             latency_ms=latency,
             tokens_estimated=tokens_estimated,
+            answerable=answerable,
         )
         if new_title:
             conversation.title = new_title
@@ -419,6 +422,7 @@ class ChatService:
                     latency,
                     new_title,
                     prompt_text,
+                    answerable=final_text != "I don't know",
                 )
             if conversation is not None:
                 active_streams.pop(conversation.id, None)

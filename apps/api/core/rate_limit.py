@@ -8,6 +8,7 @@ Redis for login would turn a cache outage into a full authentication outage.
 
 import hashlib
 import logging
+import uuid
 from collections.abc import Awaitable
 from typing import cast
 
@@ -33,6 +34,23 @@ for i = 1, #KEYS do
 end
 return result
 """
+
+
+class UserRateLimitExceededError(DomainError):
+    status_code = 429
+    code = "USER_RATE_LIMIT_EXCEEDED"
+    message = "Rate limit exceeded for this action"
+
+    def __init__(self, action: str, retry_after: int) -> None:
+        super().__init__(f"{action} rate limit exceeded; try again later")
+        self.headers = {"Retry-After": str(retry_after)}
+        self.details = {"action": action, "retry_after_seconds": retry_after}
+
+
+class RateLimitUnavailableError(DomainError):
+    status_code = 503
+    code = "RATE_LIMIT_UNAVAILABLE"
+    message = "Rate limiting is temporarily unavailable; please try again"
 
 
 class RateLimitExceededError(DomainError):
@@ -80,7 +98,7 @@ class LoginRateLimiter:
                     2,
                     keys[0],
                     keys[1],
-                    self._settings.login_rate_limit_window_seconds,
+                    str(self._settings.login_rate_limit_window_seconds),
                 ),
             )
         except RedisError as exc:
@@ -109,3 +127,57 @@ class LoginRateLimiter:
                 "login rate limiter unavailable; skipping counter reset",
                 extra={"error": str(exc)},
             )
+
+
+class UserRateLimiter:
+    """Per-user quota for metered actions.
+
+    Unlike login throttling, this fails closed: if Redis is unreachable we
+    refuse the action rather than allowing unbounded metered calls.
+    """
+
+    def __init__(
+        self, redis_client: Redis, action: str, limit: int, window_seconds: int
+    ) -> None:
+        self._redis = redis_client
+        self.action = action
+        self.limit = limit
+        self.window = window_seconds
+
+    @classmethod
+    def chat(
+        cls, redis_client: Redis, settings: Settings | None = None
+    ) -> "UserRateLimiter":
+        settings = settings or get_settings()
+        return cls(
+            redis_client,
+            "chat",
+            settings.chat_rate_limit_max,
+            settings.chat_rate_limit_window_seconds,
+        )
+
+    @classmethod
+    def upload(
+        cls, redis_client: Redis, settings: Settings | None = None
+    ) -> "UserRateLimiter":
+        settings = settings or get_settings()
+        return cls(
+            redis_client,
+            "upload",
+            settings.upload_rate_limit_max,
+            settings.upload_rate_limit_window_seconds,
+        )
+
+    async def check(self, user_id: uuid.UUID) -> None:
+        key = f"ratelimit:user:{user_id}:{self.action}"
+        try:
+            result = await cast(
+                Awaitable[list[int]],
+                self._redis.eval(_INCREMENT_SCRIPT, 1, key, str(self.window)),
+            )
+        except RedisError as exc:
+            logger.error("rate limiter unavailable for %s", self.action, exc_info=exc)
+            raise RateLimitUnavailableError() from exc
+        count, ttl = int(result[0]), int(result[1])
+        if count > self.limit:
+            raise UserRateLimitExceededError(self.action, max(1, ttl))

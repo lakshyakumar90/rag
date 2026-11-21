@@ -9,8 +9,10 @@ from api.v1.dependencies import (
     MemberContext,
     UploaderContext,
     get_document_service,
+    get_upload_rate_limiter,
 )
 from core.config import get_settings
+from core.rate_limit import UserRateLimiter
 from models import DocumentStatus
 from schemas import DocumentPage, DocumentResponse, DownloadUrlResponse
 from services import DocumentService, read_upload
@@ -28,7 +30,9 @@ async def upload_document(
     file: Annotated[UploadFile, File()],
     context: UploaderContext,
     service: Annotated[DocumentService, Depends(get_document_service)],
+    limiter: Annotated[UserRateLimiter, Depends(get_upload_rate_limiter)],
 ) -> DocumentResponse:
+    await limiter.check(context.user.id)
     data = await read_upload(file, get_settings().max_upload_size_bytes)
     return await service.upload(context, file.filename or "file", data)
 

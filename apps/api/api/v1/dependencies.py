@@ -10,7 +10,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_session
-from core.rate_limit import LoginRateLimiter
+from core.rate_limit import LoginRateLimiter, UserRateLimiter
 from core.redis import get_redis_client
 from models import MembershipRole, User
 from providers.embeddings import EmbeddingProvider, get_embedding_provider
@@ -19,12 +19,15 @@ from providers.queue import ArqJobQueue, JobQueue, get_arq_pool
 from providers.rerank import Reranker
 from providers.storage import StorageClient
 from services import (
+    AccountService,
     AuthService,
     ChatService,
     ConversationService,
     DocumentService,
+    FeedbackService,
     ProviderConfigService,
     RetrievalService,
+    UsageService,
     UserService,
     WorkspaceService,
 )
@@ -62,6 +65,18 @@ def get_login_rate_limiter(
     redis_client: Annotated[Redis, Depends(get_redis_client)],
 ) -> LoginRateLimiter:
     return LoginRateLimiter(redis_client)
+
+
+def get_chat_rate_limiter(
+    redis_client: Annotated[Redis, Depends(get_redis_client)],
+) -> UserRateLimiter:
+    return UserRateLimiter.chat(redis_client)
+
+
+def get_upload_rate_limiter(
+    redis_client: Annotated[Redis, Depends(get_redis_client)],
+) -> UserRateLimiter:
+    return UserRateLimiter.upload(redis_client)
 
 
 def get_storage_client() -> StorageClient:
@@ -109,6 +124,25 @@ def get_chat_service(
     conversations: Annotated[ConversationService, Depends(get_conversation_service)],
 ) -> ChatService:
     return ChatService(retrieval, conversations)
+
+
+def get_feedback_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> FeedbackService:
+    return FeedbackService(session)
+
+
+def get_usage_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> UsageService:
+    return UsageService(session)
+
+
+def get_account_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    storage: Annotated[StorageClient, Depends(get_storage_client)],
+) -> AccountService:
+    return AccountService(session, storage)
 
 
 async def get_current_user_id(
@@ -176,6 +210,8 @@ _require_inviter = require_role(MembershipRole.OWNER, MembershipRole.ADMIN)
 OwnerContext = Annotated[WorkspaceContext, Depends(_require_owner)]
 #: Owners and admins may invite; plain members may not.
 InviterContext = Annotated[WorkspaceContext, Depends(_require_inviter)]
+#: Analytics and audit are visible to owners and admins.
+AdminContext = InviterContext
 
 # Same role rule for documents: only owners and admins manage files.
 _require_uploader = require_role(MembershipRole.OWNER, MembershipRole.ADMIN)

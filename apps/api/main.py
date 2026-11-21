@@ -12,6 +12,7 @@ from core.exceptions import register_exception_handlers
 from core.logging import configure_logging
 from core.middleware import RequestIdMiddleware
 from core.redis import close_redis_client
+from core.security_headers import SecurityHeadersMiddleware
 from providers.embeddings import close_embedding_provider
 from providers.queue import close_queue_pool, init_queue_pool
 
@@ -36,6 +37,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
 
     app = FastAPI(title="RAG API", version="0.1.0", lifespan=lifespan)
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestIdMiddleware)
     if settings.cors_origin_list:
         app.add_middleware(

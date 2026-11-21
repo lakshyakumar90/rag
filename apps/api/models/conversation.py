@@ -74,6 +74,8 @@ class Message(BaseModel):
     tokens_estimated: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=false()
     )
+    # False marks an "I don't know" answer (low-confidence retrieval).
+    answerable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")
 

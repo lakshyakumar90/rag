@@ -113,6 +113,18 @@ class Settings(BaseSettings):
     )
     cli_max_concurrent: int = Field(default=2, validation_alias="CLI_MAX_CONCURRENT")
 
+    # Per-user rate limits for metered actions (fail closed on Redis outage).
+    chat_rate_limit_max: int = Field(default=30, validation_alias="CHAT_RATE_LIMIT_MAX")
+    chat_rate_limit_window_seconds: int = Field(
+        default=3600, validation_alias="CHAT_RATE_LIMIT_WINDOW_SECONDS"
+    )
+    upload_rate_limit_max: int = Field(
+        default=50, validation_alias="UPLOAD_RATE_LIMIT_MAX"
+    )
+    upload_rate_limit_window_seconds: int = Field(
+        default=3600, validation_alias="UPLOAD_RATE_LIMIT_WINDOW_SECONDS"
+    )
+
     # Retrieval: vector + keyword fusion
     retrieval_candidate_k: int = Field(
         default=20, validation_alias="RETRIEVAL_CANDIDATE_K"

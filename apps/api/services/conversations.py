@@ -89,6 +89,7 @@ class ConversationService:
         output_tokens: int = 0,
         latency_ms: int = 0,
         tokens_estimated: bool = False,
+        answerable: bool | None = None,
         commit: bool = True,
     ) -> Message:
         message = Message(
@@ -102,6 +103,7 @@ class ConversationService:
             output_tokens=output_tokens,
             latency_ms=latency_ms,
             tokens_estimated=tokens_estimated,
+            answerable=answerable,
         )
         await self._conversations.add_message(message)
         if commit:

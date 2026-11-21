@@ -25,6 +25,7 @@ from schemas import (
     ProviderConfigResponse,
     ProviderConfigUpdate,
 )
+from services.audit import record as record_audit
 from services.exceptions import (
     ConnectionTestError,
     EncryptionUnavailableError,
@@ -51,6 +52,14 @@ class ProviderConfigService:
             key_last4=key_last4(payload.api_key),
         )
         await self._configs.add(config)
+        await record_audit(
+            self._session,
+            user,
+            "api_key.added",
+            target_type="provider_config",
+            target_id=config.id,
+            details={"provider": str(payload.provider_type)},
+        )
         await self._session.commit()
         return ProviderConfigResponse.model_validate(config)
 
@@ -83,6 +92,16 @@ class ProviderConfigService:
             changes.pop("api_key", None)
         for field, value in changes.items():
             setattr(config, field, value)
+        if "api_key" in payload.model_dump(exclude_unset=True):
+            actor = await self._session.get(User, user_id)
+            assert actor is not None
+            await record_audit(
+                self._session,
+                actor,
+                "api_key.rotated",
+                target_type="provider_config",
+                target_id=config.id,
+            )
         await self._session.commit()
         # updated_at is expired by the flush (onupdate=func.now()).
         await self._session.refresh(config)
@@ -90,6 +109,16 @@ class ProviderConfigService:
 
     async def delete(self, user_id: uuid.UUID, config_id: uuid.UUID) -> None:
         config = await self._owned(user_id, config_id)
+        actor = await self._session.get(User, user_id)
+        assert actor is not None
+        await record_audit(
+            self._session,
+            actor,
+            "api_key.removed",
+            target_type="provider_config",
+            target_id=config_id,
+            details={"provider": str(config.provider_type)},
+        )
         await self._configs.delete(config)
         await self._session.commit()
 
