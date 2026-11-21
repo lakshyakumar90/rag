@@ -15,6 +15,7 @@ from schemas.provider_config import (
     ProviderConfigUpdate,
     ProviderType,
 )
+from schemas.retrieval import SearchRequest, SearchResponse, SearchResult
 from schemas.user import UserResponse, UserUpdate
 from schemas.workspace import (
     InvitationAcceptRequest,
@@ -47,6 +48,9 @@ __all__ = [
     "ProviderConfigUpdate",
     "ProviderType",
     "RoleUpdate",
+    "SearchRequest",
+    "SearchResponse",
+    "SearchResult",
     "RefreshRequest",
     "RegisterRequest",
     "TokenPair",
