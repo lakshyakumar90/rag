@@ -174,3 +174,36 @@ All routes are under `/api/v1` and require a Bearer access token:
   uniqueness, member vs non-member access, owner-only update/delete, invite
   token+link, acceptance (wrong email / reused / expired), member listing,
   role changes, removal, and last-owner protection — 10 new end-to-end tests.
+
+## Access Control (3.3)
+
+- **`WorkspaceContext`** (in `services/workspaces.py`): `user` + `workspace`
+  (from the path) + the caller's `role`. `get_workspace_context` in
+  `api/v1/dependencies.py` resolves it once: unknown workspace → 404, known
+  workspace where the caller has no membership → 403. All protected workspace
+  endpoints now declare a context dependency instead of re-checking
+  membership in the service.
+- **`require_role(*roles, error=...)`**: dependency factory for role checks.
+  Module-level aliases keep FastAPI's dependency cache stable:
+  `MemberContext` (any member), `OwnerContext` (owner only, keeps the
+  `OWNER_REQUIRED` code), and `InviterContext` (owner or admin). Generic role
+  failures return `INSUFFICIENT_ROLE` with `required_roles`/`current_role`
+  details — so a member trying to invite now gets `INSUFFICIENT_ROLE`, while
+  owner-only actions keep `OWNER_REQUIRED`.
+- **Tenant-scoped repositories:** every method of `WorkspaceRepository`,
+  `MembershipRepository` and `InvitationRepository` now takes `workspace_id`
+  and uses it in the SQL filter (`get_by_slug` uses it to exclude the row
+  being updated; `list_for_user` can narrow to one workspace). Write methods
+  take `workspace_id` too and validate the object's tenant through
+  `repositories.base.ensure_workspace_scope` — a mismatch raises `ValueError`
+  (a bug, not a user error). The only global lookups left are deliberately
+  cross-tenant: user/refresh-token tables (identity, not workspace data),
+  global slug uniqueness checks, and invitation redemption by token (the
+  caller is not a member yet, so email/expiry checks gate that path).
+- **Tests** (`apps/api/tests/test_access_control.py`): two users in two
+  workspaces; A cannot list, get, update, delete, invite into, list
+  invitations/members of, change roles in, or remove members from B, and
+  cannot redeem B's invitation; B's data is verified unchanged afterwards.
+  Also covers cross-workspace target ids (404 `MEMBER_NOT_FOUND`), member vs
+  owner vs admin role checks, and unknown workspace (404). 5 new tests;
+  35 total pass.
