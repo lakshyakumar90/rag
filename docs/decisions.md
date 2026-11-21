@@ -336,3 +336,32 @@ Three strategies in `workers/chunking.py`, all returning the same `Chunk`
   oversized single tokens, tiny files, CJK/unicode, Markdown and DOCX heading
   paths, invalid settings, and DB persistence of all chunk fields. 13 new unit
   tests + 1 integration test; 70 total pass.
+
+## Embeddings (5.4)
+
+- **Choice: Ollama**, since `embeddinggemma-2:440m` is already installed and the
+  service is in compose. `providers/embeddings.py` defines an `EmbeddingProvider`
+  protocol (`embed_documents`, `embed_query`, `dimension`) and
+  `OllamaEmbeddingProvider` using `POST /api/embed`. fastembed was not chosen to
+  avoid shipping a second model/runtime alongside Ollama.
+- **Batching/retries/timeouts:** inputs are split into batches of
+  `EMBEDDING_BATCH_SIZE` (32); each request has `EMBEDDING_TIMEOUT_SECONDS` (60)
+  and up to `EMBEDDING_MAX_RETRIES` (3) attempts with exponential backoff for
+  timeouts, connection errors, 429 and 5xx. Other 4xx and malformed responses
+  are permanent and fail immediately. Response count and
+  `EMBEDDING_DIM` (768, verified earlier at runtime) are validated.
+- **Normalization:** L2-normalized by default (`EMBEDDING_NORMALIZE=true`) so
+  cosine similarity is correct; can be disabled for models that already return
+  unit vectors.
+- **Config scope:** global settings for v1 (explicitly allowed by the spec);
+  per-workspace `embedding_model`/`embedding_dim` selection is deferred.
+- **Persistence:** vectors are stored as JSON on `document_chunks.embedding`,
+  with `documents.embedding_model`/`embedding_dim` for provenance (migration
+  `5518ae5a1925`). A pgvector column/index belongs to the retrieval phase.
+  The worker injects the provider through `WorkerSettings.ctx` and fails/retries
+  the job if embedding fails, so no document is marked ready without vectors.
+- **Tests** (`apps/api/tests/test_embeddings.py`): batching, query path, empty
+  input, normalization, dimension/count validation, permanent 4xx, retry on
+  5xx and timeout. Worker tests verify vectors are persisted. 9 new tests;
+  79 total pass. (Live Ollama is running here, but the installed model cannot
+  start because the `llama-server` binary is missing, so HTTP is mocked in tests.)
