@@ -628,3 +628,23 @@ Three strategies in `workers/chunking.py`, all returning the same `Chunk`
   shared primitives.
 - **Verification:** `pnpm check-types`, `pnpm lint` and `pnpm build` all pass
   (routes `/`, `/login`, `/register`, `/dashboard`).
+
+## Frontend Pages (8.2)
+
+- **Navigation:** workspace-scoped layout with a picker, links to
+  documents/chat/members/settings, and a client `AuthGuard`.
+- **Documents:** native drag-and-drop upload with XHR progress (fetch cannot
+  report upload progress), status badges, delete, re-index retry, empty state,
+  skeletons and error toasts.
+- **Chat:** conversation sidebar (new/select/delete), SSE streaming via a
+  `ReadableStream` reader, React Markdown + GFM rendering, stop (AbortController
+  + `/stop`), regenerate, and citation chips that open a side panel with
+  snippet, document name, page and heading path. Snippets come from a
+  companion `/search` call because `SourceRef` carries ids, not text.
+- **Members:** invite form producing a shareable accept link (new
+  `/invitations/accept` page), pending invitations, role dropdown and removal.
+- **Settings:** profile update, BYOK provider CRUD with key masking and test
+  connection, and CLI status listing.
+- **Feedback:** sonner toasts, skeleton loaders and empty states across pages.
+- **Verification:** `pnpm check-types`, `pnpm lint` and `pnpm build` pass; build
+  emits all workspace pages as dynamic routes.
