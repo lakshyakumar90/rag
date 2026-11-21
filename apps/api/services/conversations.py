@@ -2,6 +2,7 @@
 
 import uuid
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import get_settings
@@ -87,6 +88,7 @@ class ConversationService:
         input_tokens: int = 0,
         output_tokens: int = 0,
         latency_ms: int = 0,
+        tokens_estimated: bool = False,
         commit: bool = True,
     ) -> Message:
         message = Message(
@@ -99,6 +101,7 @@ class ConversationService:
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             latency_ms=latency_ms,
+            tokens_estimated=tokens_estimated,
         )
         await self._conversations.add_message(message)
         if commit:
@@ -107,6 +110,27 @@ class ConversationService:
 
     async def commit(self) -> None:
         await self._session.commit()
+
+    async def rename(
+        self, context: WorkspaceContext, conversation_id: uuid.UUID, title: str
+    ) -> ConversationResponse:
+        conversation = await self.get(context, conversation_id)
+        conversation.title = title.strip()[:200] or "New conversation"
+        await self._session.commit()
+        await self._session.refresh(conversation)
+        return ConversationResponse.model_validate(conversation)
+
+    async def delete_last_turn(self, conversation_id: uuid.UUID) -> None:
+        """Remove the last assistant message and its user question."""
+        result = await self._session.execute(
+            select(Message)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.sequence.desc())
+            .limit(2)
+        )
+        for message in result.scalars().all():
+            await self._session.delete(message)
+        await self._session.flush()
 
     # ---------- prompting helpers ----------
 
