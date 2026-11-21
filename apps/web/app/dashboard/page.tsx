@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AuthGuard } from "../../components/auth-guard";
 import { ThemeToggle } from "../../components/theme-toggle";
@@ -64,7 +65,11 @@ function Dashboard() {
         {workspaces?.map((workspace) => (
           <Card key={workspace.id}>
             <CardHeader>
-              <CardTitle>{workspace.name}</CardTitle>
+              <CardTitle>
+                <Link className="hover:underline" href={`/workspaces/${workspace.id}/documents`}>
+                  {workspace.name}
+                </Link>
+              </CardTitle>
               <p className="text-sm text-muted-foreground">/{workspace.slug}</p>
             </CardHeader>
           </Card>
