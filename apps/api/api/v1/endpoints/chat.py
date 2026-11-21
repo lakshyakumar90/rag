@@ -27,4 +27,5 @@ async def chat(
         payload.top_k,
         payload.document_ids,
         payload.provider,
+        payload.conversation_id,
     )

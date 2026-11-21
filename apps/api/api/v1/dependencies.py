@@ -21,6 +21,7 @@ from providers.storage import StorageClient
 from services import (
     AuthService,
     ChatService,
+    ConversationService,
     DocumentService,
     ProviderConfigService,
     RetrievalService,
@@ -97,10 +98,17 @@ def get_retrieval_service(
     return RetrievalService(session, embeddings, reranker)
 
 
+def get_conversation_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ConversationService:
+    return ConversationService(session)
+
+
 def get_chat_service(
     retrieval: Annotated[RetrievalService, Depends(get_retrieval_service)],
+    conversations: Annotated[ConversationService, Depends(get_conversation_service)],
 ) -> ChatService:
-    return ChatService(retrieval)
+    return ChatService(retrieval, conversations)
 
 
 async def get_current_user_id(
