@@ -124,3 +124,21 @@ class OllamaEmbeddingProvider:
                 f"embedding dimension {len(values)} != configured {self.dimension}"
             )
         return normalize(values) if self._settings.embedding_normalize else values
+
+
+# Process-wide provider used by retrieval and the API dependency.
+_embedding_provider: OllamaEmbeddingProvider | None = None
+
+
+def get_embedding_provider() -> EmbeddingProvider:
+    global _embedding_provider
+    if _embedding_provider is None:
+        _embedding_provider = OllamaEmbeddingProvider()
+    return _embedding_provider
+
+
+async def close_embedding_provider() -> None:
+    global _embedding_provider
+    if _embedding_provider is not None:
+        await _embedding_provider.close()
+        _embedding_provider = None

@@ -113,6 +113,22 @@ class Settings(BaseSettings):
     )
     cli_max_concurrent: int = Field(default=2, validation_alias="CLI_MAX_CONCURRENT")
 
+    # Retrieval: vector + keyword fusion
+    retrieval_candidate_k: int = Field(
+        default=20, validation_alias="RETRIEVAL_CANDIDATE_K"
+    )
+    retrieval_top_k: int = Field(default=5, validation_alias="RETRIEVAL_TOP_K")
+    retrieval_score_threshold: float = Field(
+        default=0.15, validation_alias="RETRIEVAL_SCORE_THRESHOLD"
+    )
+    rrf_k: int = Field(default=60, validation_alias="RRF_K")
+    rerank_enabled: bool = Field(default=False, validation_alias="RERANK_ENABLED")
+    rerank_base_url: str = Field(default="", validation_alias="RERANK_BASE_URL")
+    rerank_model: str | None = Field(default=None, validation_alias="RERANK_MODEL")
+    rerank_timeout_seconds: float = Field(
+        default=30.0, validation_alias="RERANK_TIMEOUT_SECONDS"
+    )
+
     # App / RAG
     database_url: str | None = Field(default=None, validation_alias="DATABASE_URL")
     api_key: str | None = Field(default=None, validation_alias="API_KEY")
