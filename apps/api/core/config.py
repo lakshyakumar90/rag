@@ -54,6 +54,24 @@ class Settings(BaseSettings):
         validation_alias="OLLAMA_EMBEDDING_MODEL",
     )
 
+    # Embeddings. Global settings for v1 (per-workspace model selection later).
+    embedding_dim: int = Field(default=768, validation_alias="EMBEDDING_DIM")
+    embedding_batch_size: int = Field(
+        default=32, validation_alias="EMBEDDING_BATCH_SIZE"
+    )
+    embedding_timeout_seconds: float = Field(
+        default=60.0, validation_alias="EMBEDDING_TIMEOUT_SECONDS"
+    )
+    embedding_max_retries: int = Field(
+        default=3, validation_alias="EMBEDDING_MAX_RETRIES"
+    )
+    embedding_retry_backoff_seconds: float = Field(
+        default=1.0, validation_alias="EMBEDDING_RETRY_BACKOFF_SECONDS"
+    )
+    embedding_normalize: bool = Field(
+        default=True, validation_alias="EMBEDDING_NORMALIZE"
+    )
+
     # App / RAG
     database_url: str | None = Field(default=None, validation_alias="DATABASE_URL")
     api_key: str | None = Field(default=None, validation_alias="API_KEY")
