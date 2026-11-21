@@ -142,6 +142,40 @@ export async function authFetch(path: string, init: RequestInit = {}): Promise<R
   return response;
 }
 
+/** Multipart upload with progress events (fetch cannot report upload progress). */
+export function uploadWithProgress<T>(
+  path: string,
+  file: File,
+  onProgress: (percent: number) => void,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
+    xhr.open("POST", url);
+    xhr.withCredentials = true;
+    if (accessToken) xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100));
+    };
+    xhr.onload = () => {
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new ApiError(xhr.status, `Upload failed (${xhr.status})`));
+        return;
+      }
+      onProgress(100);
+      try {
+        resolve(xhr.responseText ? (JSON.parse(xhr.responseText) as T) : (undefined as T));
+      } catch {
+        reject(new Error("Invalid upload response"));
+      }
+    };
+    xhr.onerror = () => reject(new Error("Upload failed"));
+    const form = new FormData();
+    form.append("file", file);
+    xhr.send(form);
+  });
+}
+
 /** Typed convenience wrapper: returns parsed JSON or throws ApiError. */
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await authFetch(path, {

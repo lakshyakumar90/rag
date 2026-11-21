@@ -3,23 +3,28 @@
  * is generated from the FastAPI OpenAPI document (`pnpm api:types`).
  */
 import { apiRequest } from "../auth-client";
-import type { components, operations, paths } from "./schema";
+import type { components, paths } from "./schema";
 
 export type ApiPaths = paths;
-export type ApiOperations = operations;
+type S = components["schemas"];
 
-export type User = components["schemas"]["UserResponse"];
-export type Workspace = components["schemas"]["WorkspaceResponse"];
-export type WorkspaceCreate = components["schemas"]["WorkspaceCreate"];
-export type LoginRequest = components["schemas"]["LoginRequest"];
-export type RegisterRequest = components["schemas"]["RegisterRequest"];
-export type TokenResponse = components["schemas"]["TokenResponse"];
-export type Document = components["schemas"]["DocumentResponse"];
-export type Message = components["schemas"]["MessageResponse"];
-export type Conversation = components["schemas"]["ConversationResponse"];
-export type ChatResponse = components["schemas"]["ChatResponse"];
+export type User = S["UserResponse"];
+export type Workspace = S["WorkspaceResponse"];
+export type WorkspaceCreate = S["WorkspaceCreate"];
+export type Document = S["DocumentResponse"];
+export type DocumentPage = S["DocumentPage"];
+export type Member = S["MemberResponse"];
+export type Invitation = S["InvitationResponse"];
+export type InvitationCreated = S["InvitationCreatedResponse"];
+export type Conversation = S["ConversationResponse"];
+export type Message = S["MessageResponse"];
+export type ChatResponse = S["ChatResponse"];
+export type SearchResponse = S["SearchResponse"];
+export type ProviderConfig = S["ProviderConfigResponse"];
+export type ConnectionTest = S["ConnectionTestResponse"];
+export type CLIStatus = S["CLIStatusResponse"];
 
-/** Generic typed request used by feature code as the API grows. */
+/** Static (parameterless) path, checked against the generated schema. */
 export function request<T>(path: keyof paths, init?: RequestInit): Promise<T> {
   return apiRequest<T>(path as string, init);
 }
@@ -29,22 +34,112 @@ export function requestPath<T>(path: string, init?: RequestInit): Promise<T> {
   return apiRequest<T>(path, init);
 }
 
+const json = (body: unknown): RequestInit => ({
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(body),
+});
+
 export const api = {
   me: () => request<User>("/api/v1/users/me"),
+  updateMe: (fullName: string | null) =>
+    apiRequest<User>("/api/v1/users/me", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ full_name: fullName }),
+    }),
   listWorkspaces: () => request<Workspace[]>("/api/v1/workspaces"),
   createWorkspace: (body: WorkspaceCreate) =>
-    request<Workspace>("/api/v1/workspaces", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-  listDocuments: (workspaceId: string) =>
-    requestPath<components["schemas"]["DocumentPage"]>(
-      `/api/v1/workspaces/${workspaceId}/documents`,
+    apiRequest<Workspace>("/api/v1/workspaces", json(body)),
+  deleteWorkspace: (id: string) =>
+    apiRequest<void>(`/api/v1/workspaces/${id}`, { method: "DELETE" }),
+
+  documents: (workspaceId: string, status?: string) =>
+    requestPath<DocumentPage>(
+      `/api/v1/workspaces/${workspaceId}/documents${
+        status ? `?status=${status}` : ""
+      }`,
     ),
-  listConversations: (workspaceId: string) =>
+  deleteDocument: (workspaceId: string, documentId: string) =>
+    apiRequest<void>(`/api/v1/workspaces/${workspaceId}/documents/${documentId}`, {
+      method: "DELETE",
+    }),
+  reindexDocument: (workspaceId: string, documentId: string) =>
+    apiRequest<Document>(
+      `/api/v1/workspaces/${workspaceId}/documents/${documentId}/reindex`,
+      { method: "POST" },
+    ),
+
+  members: (workspaceId: string) =>
+    requestPath<Member[]>(`/api/v1/workspaces/${workspaceId}/members`),
+  invitations: (workspaceId: string) =>
+    requestPath<Invitation[]>(`/api/v1/workspaces/${workspaceId}/invitations`),
+  invite: (workspaceId: string, email: string, role: "admin" | "member") =>
+    apiRequest<InvitationCreated>(
+      `/api/v1/workspaces/${workspaceId}/invitations`,
+      json({ email, role }),
+    ),
+  changeRole: (workspaceId: string, userId: string, role: string) =>
+    apiRequest<Member>(`/api/v1/workspaces/${workspaceId}/members/${userId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role }),
+    }),
+  removeMember: (workspaceId: string, userId: string) =>
+    apiRequest<void>(`/api/v1/workspaces/${workspaceId}/members/${userId}`, {
+      method: "DELETE",
+    }),
+
+  conversations: (workspaceId: string) =>
     requestPath<Conversation[]>(`/api/v1/workspaces/${workspaceId}/conversations`),
-  listMessages: (workspaceId: string, conversationId: string) =>
+  createConversation: (workspaceId: string, title?: string) =>
+    apiRequest<Conversation>(
+      `/api/v1/workspaces/${workspaceId}/conversations`,
+      json({ title: title ?? null }),
+    ),
+  messages: (workspaceId: string, conversationId: string) =>
     requestPath<Message[]>(
       `/api/v1/workspaces/${workspaceId}/conversations/${conversationId}/messages`,
     ),
+  renameConversation: (workspaceId: string, conversationId: string, title: string) =>
+    apiRequest<Conversation>(
+      `/api/v1/workspaces/${workspaceId}/conversations/${conversationId}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      },
+    ),
+  deleteConversation: (workspaceId: string, conversationId: string) =>
+    apiRequest<void>(
+      `/api/v1/workspaces/${workspaceId}/conversations/${conversationId}`,
+      { method: "DELETE" },
+    ),
+  stopGeneration: (workspaceId: string, conversationId: string) =>
+    apiRequest<{ cancelled: boolean }>(
+      `/api/v1/workspaces/${workspaceId}/conversations/${conversationId}/stop`,
+      { method: "POST" },
+    ),
+  regenerate: (workspaceId: string, conversationId: string) =>
+    apiRequest<ChatResponse>(
+      `/api/v1/workspaces/${workspaceId}/conversations/${conversationId}/regenerate`,
+      { method: "POST" },
+    ),
+  search: (workspaceId: string, query: string) =>
+    apiRequest<SearchResponse>(`/api/v1/workspaces/${workspaceId}/search`, json({ query })),
+
+  providerConfigs: () => request<S["ProviderConfigResponse"][]>("/api/v1/provider-configs"),
+  addProviderConfig: (body: {
+    provider_type: string;
+    base_url?: string | null;
+    model?: string | null;
+    api_key: string;
+  }) => apiRequest<ProviderConfig>("/api/v1/provider-configs", json(body)),
+  testProviderConfig: (id: string) =>
+    apiRequest<ConnectionTest>(`/api/v1/provider-configs/${id}/test`, { method: "POST" }),
+  deleteProviderConfig: (id: string) =>
+    apiRequest<void>(`/api/v1/provider-configs/${id}`, { method: "DELETE" }),
+  cliStatus: () => request<CLIStatus>("/api/v1/providers/cli/status"),
+  acceptInvitation: (token: string) =>
+    apiRequest<Workspace>("/api/v1/invitations/accept", json({ token })),
 };
