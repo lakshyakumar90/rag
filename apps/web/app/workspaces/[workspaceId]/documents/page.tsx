@@ -24,9 +24,18 @@ export default function DocumentsPage() {
   const [dragging, setDragging] = useState(false);
   const [uploads, setUploads] = useState<{ name: string; progress: number }[]>([]);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching } = useQuery({
     queryKey: ["documents", workspaceId],
     queryFn: () => api.documents(workspaceId),
+    // Poll only while ingestion is in flight; stop once everything settles.
+    refetchInterval: (query) => {
+      const items = query.state.data?.items ?? [];
+      return items.some(
+        (item) => item.status === "pending" || item.status === "processing",
+      )
+        ? 1500
+        : false;
+    },
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["documents", workspaceId] });
@@ -104,6 +113,10 @@ export default function DocumentsPage() {
         </div>
       ) : null}
 
+      {!isLoading && isFetching ? (
+        <p className="text-xs text-muted-foreground">Checking document status…</p>
+      ) : null}
+
       {isLoading ? (
         <div className="flex flex-col gap-3">
           <Skeleton className="h-16 w-full" />
@@ -137,6 +150,19 @@ export default function DocumentsPage() {
                   </Button>
                 </div>
               </CardHeader>
+              {(document.status === "pending" || document.status === "processing") &&
+              document.chunks_total > 0 ? (
+                <CardContent>
+                  <div className="h-1 rounded bg-muted">
+                    <div
+                      className="h-1 rounded bg-primary"
+                      style={{
+                        width: `${Math.round((document.chunks_done / document.chunks_total) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                </CardContent>
+              ) : null}
               {document.error ? (
                 <CardContent className="text-sm text-destructive">{document.error}</CardContent>
               ) : null}
