@@ -782,3 +782,31 @@ Three strategies in `workers/chunking.py`, all returning the same `Chunk`
 - **Verification:** ruff, format and mypy clean; `173 passed, 4 skipped`
   backend tests; `pnpm check-types`, `pnpm lint`, `pnpm build`, the e2e
   type-check and `playwright test --list` (6 tests) all pass.
+
+## CI (10.3)
+
+- **Workflow:** `.github/workflows/ci.yml` runs on pushes to `main`, PRs and
+  manual dispatch, with per-branch concurrency cancellation. Four jobs:
+  API lint/format/mypy/pytest, web lint/type-check/build plus Playwright spec
+  discovery, a real-Postgres integration job using a `pgvector/pgvector:pg16`
+  service container, and image builds for both Dockerfiles.
+- **Python:** dependencies come from `uv.lock` with `uv sync --frozen
+  --all-groups --no-install-project`; `uv.lock` was regenerated to include the
+  integration-test dependencies (`asyncpg`, `testcontainers`).
+- **JS:** `pnpm install --no-frozen-lockfile` is deliberate — the pnpm lockfile
+  is developer-managed locally, so CI resolves from `package.json` instead of
+  failing on a stale frozen lockfile. Once that lockfile is committed, this can
+  be tightened to `--frozen-lockfile`.
+- **Images:** the web app gained `output: "standalone"` in `next.config.js` and
+  a non-root multi-stage `apps/web/Dockerfile`; `.dockerignore` now keeps the
+  web source in the build context while still excluding local environments and
+  installed/build output.
+- **Updates:** `.github/dependabot.yml` checks GitHub Actions, npm, Python/uv
+  and both Docker directories weekly, grouping minor/patch updates.
+- **Retrieval table:** `docs/evaluation.md` now has a dedicated "Which retrieval
+  settings work best" table (256-token chunks, strongest available embedding,
+  hybrid on Postgres, reranking on, 20/5 candidate/final k).
+- **Verification:** all CI commands were run locally and pass — ruff, mypy,
+  `173 passed` pytest run, the 4 real-Postgres integration tests (which passed
+  once Docker was available), `pnpm lint/check-types/build`, Playwright spec
+  discovery, and both `docker build` commands.

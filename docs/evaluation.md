@@ -44,6 +44,20 @@ Results are from SQLite, where vector search is Python cosine similarity and
 keyword search is substring matching. On Postgres the same code uses pgvector
 and `tsvector`/`ts_rank_cd`, so absolute numbers may differ.
 
+## Which retrieval settings work best
+
+| Setting | Measured best | Recommendation |
+|---|---|---|
+| Chunk size | 256–512 tokens (hit@1 0.815) | **256 tokens, 20% overlap** — 512 ties on quality but costs more storage |
+| Embedding | tfidf-768 (hit@1 0.884, answer 0.833) | **best available embedding model**; avoid small hashed vectors |
+| Retrieval mode | vector and hybrid tie at 0.812 on SQLite | **hybrid** — Postgres `tsvector` adds stemming; re-measure there |
+| Reranking | on (hit@1 0.877 vs 0.747 off) | **enabled** |
+| Candidate / final k | 20 / 5 | keep `candidate_k=20`, `top_k=5` |
+
+Best single configuration: `chunk=128 tfidf-768 vector rerank` (hit@1 0.944,
+answer 0.833, citation 0.944). The 256-token equivalent is effectively tied and
+is the safer default for longer documents.
+
 ## Headline results
 
 Averaged over all 12 configurations per dimension:

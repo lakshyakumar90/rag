@@ -13,10 +13,12 @@
 .env.*
 !.env.example
 
-# JS/TS side of the monorepo — not needed by the API image
+# Installed JS dependencies and build output are regenerated in the image.
+# Source for apps/web and packages/ is kept so the web image can build.
 node_modules
-apps/web
-packages
+**/node_modules
+**/.next
+**/dist
 *.tsbuildinfo
 
 # Misc
