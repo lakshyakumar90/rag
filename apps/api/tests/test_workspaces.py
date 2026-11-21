@@ -242,7 +242,8 @@ async def test_member_cannot_invite(client: AsyncClient) -> None:
         json={"email": "other@example.com", "role": "member"},
     )
     assert response.status_code == 403
-    assert response.json()["error"]["code"] == "OWNER_REQUIRED"
+    assert response.json()["error"]["code"] == "INSUFFICIENT_ROLE"
+    assert response.json()["error"]["details"]["current_role"] == "member"
 
 
 async def test_change_role_and_remove_member(client: AsyncClient) -> None:
