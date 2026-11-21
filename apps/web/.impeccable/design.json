@@ -1,0 +1,52 @@
+{
+  "name": "RAG Workspace",
+  "source": "apps/web/app/globals.css and components/ui/*",
+  "direction": "pinned-by-user: minimal developer-console / editorial workspace; pure black dark, off-white light",
+  "tokens": {
+    "colors": {
+      "light-bg": "#faf9f6",
+      "dark-bg": "#000000",
+      "surface": "#ffffff",
+      "surface-dark": "#0a0a0a",
+      "raised-dark": "#141414",
+      "ink": "#111110",
+      "ink-dark": "#f5f5f3",
+      "muted": "#61605a",
+      "muted-dark": "#9a9a95",
+      "border": "#dedcd5",
+      "border-dark": "#262626",
+      "signal": "#2049d8",
+      "signal-dark": "#7ea6ff"
+    },
+    "radius": { "sm": "6px", "md": "8px", "panel": "10px", "sheet": "14px", "pill": "999px" },
+    "spacing": { "xs": "4px", "sm": "8px", "md": "12px", "lg": "20px", "xl": "32px" },
+    "typography": {
+      "micro": "Geist Sans 500 10px",
+      "caption": "Geist Sans 500 11px",
+      "label": "Geist Sans 500 12px",
+      "body": "Geist Sans 400 13px/1.5 -0.01em",
+      "section": "Geist Sans 600 14px",
+      "subtitle": "Geist Sans 600 15px",
+      "headline": "Geist Sans 600 22px",
+      "auth-title": "Geist Sans 600 24px",
+      "title": "Geist Sans 600 26px/1.1 -0.025em",
+      "display": "Geist Sans 600 30px",
+      "mono": "Geist Mono 400 11px tabular-nums"
+    }
+  },
+  "componentLibraries": [
+    "Radix UI (dialog, dropdown-menu, select, tabs, tooltip, separator, slot, avatar)",
+    "cmdk command palette",
+    "lucide-react icons",
+    "sonner toasts",
+    "class-variance-authority + clsx + tailwind-merge",
+    "@tanstack/react-query",
+    "next-themes"
+  ],
+  "notes": [
+    "One authored shadow for floating panels only; all other depth is borders and surface steps.",
+    "Mobile is a redesign (top bar + bottom tabs + sheets), not a squeeze of the rail layout.",
+    "Hydration-safe theme toggles mount after first client render.",
+    "Detector run: impeccable detect --json returned [] on changed targets."
+  ]
+}
