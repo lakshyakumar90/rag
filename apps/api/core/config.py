@@ -96,6 +96,13 @@ class Settings(BaseSettings):
     anthropic_model: str = Field(
         default="claude-3-5-haiku-latest", validation_alias="ANTHROPIC_MODEL"
     )
+    # Fernet master key for encrypting user-supplied API keys. Generate with
+    # Fernet.generate_key() from the cryptography package.
+    llm_master_key: str | None = Field(default=None, validation_alias="LLM_MASTER_KEY")
+    # Allow custom base_urls pointing at localhost/private ranges (local dev).
+    local_mode_enabled: bool = Field(
+        default=False, validation_alias="LOCAL_MODE_ENABLED"
+    )
 
     # App / RAG
     database_url: str | None = Field(default=None, validation_alias="DATABASE_URL")
