@@ -108,6 +108,14 @@ class Settings(BaseSettings):
         validation_alias="INVITATION_ACCEPT_BASE_URL",
     )
 
+    # Document uploads
+    max_upload_size_bytes: int = Field(
+        default=25 * 1024 * 1024, validation_alias="MAX_UPLOAD_SIZE_BYTES"
+    )
+    presigned_url_ttl_seconds: int = Field(
+        default=900, validation_alias="PRESIGNED_URL_TTL_SECONDS"
+    )
+
     # CORS (comma-separated origins, e.g. "http://localhost:3000,https://app.example.com")
     cors_origins: str = Field(default="", validation_alias="CORS_ORIGINS")
     cors_allow_credentials: bool = Field(
