@@ -80,6 +80,16 @@ class OwnerRequiredError(DomainError):
     message = "Only a workspace owner can perform this action"
 
 
+class InsufficientRoleError(DomainError):
+    status_code = 403
+    code = "INSUFFICIENT_ROLE"
+    message = "Your role in this workspace does not allow this action"
+
+    def __init__(self, required: list[str], current: str) -> None:
+        super().__init__(self.message)
+        self.details = {"required_roles": required, "current_role": current}
+
+
 class LastOwnerError(DomainError):
     status_code = 409
     code = "LAST_OWNER"

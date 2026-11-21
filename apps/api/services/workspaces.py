@@ -1,7 +1,14 @@
-"""Workspace, membership and invitation business logic."""
+"""Workspace, membership and invitation business logic.
+
+Every method that touches workspace-scoped data goes through a repository
+method that takes ``workspace_id`` and filters by it. Protected endpoints
+receive a ``WorkspaceContext`` (resolved by ``get_workspace_context``) rather
+than a bare user id, so membership and role are checked in one place.
+"""
 
 import secrets
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 
@@ -42,10 +49,18 @@ from services.exceptions import (
     LastOwnerError,
     MemberNotFoundError,
     NotWorkspaceMemberError,
-    OwnerRequiredError,
     WorkspaceNotFoundError,
     WorkspaceSlugAlreadyExistsError,
 )
+
+
+@dataclass(frozen=True)
+class WorkspaceContext:
+    """The authenticated user, the workspace from the path, and their role."""
+
+    user: User
+    workspace: Workspace
+    role: MembershipRole
 
 
 class WorkspaceService:
@@ -55,6 +70,20 @@ class WorkspaceService:
         self._memberships = MembershipRepository(session)
         self._invitations = InvitationRepository(session)
 
+    # ---------- context ----------
+
+    async def get_context(
+        self, workspace_id: uuid.UUID, user: User
+    ) -> WorkspaceContext:
+        """Resolve a workspace path id into an authorized caller context."""
+        workspace = await self._workspaces.get(workspace_id)
+        if workspace is None:
+            raise WorkspaceNotFoundError()
+        membership = await self._memberships.get(workspace_id, user.id)
+        if membership is None:
+            raise NotWorkspaceMemberError()
+        return WorkspaceContext(user=user, workspace=workspace, role=membership.role)
+
     # ---------- workspaces ----------
 
     async def create(
@@ -63,17 +92,21 @@ class WorkspaceService:
         if await self._workspaces.get_by_slug(payload.slug) is not None:
             raise WorkspaceSlugAlreadyExistsError()
 
+        workspace_id = uuid.uuid4()
         workspace = Workspace(
-            name=payload.name, slug=payload.slug, created_by=creator.id
+            id=workspace_id,
+            name=payload.name,
+            slug=payload.slug,
+            created_by=creator.id,
         )
-        await self._workspaces.add(workspace)
+        await self._workspaces.add(workspace, workspace_id)
         # The creator is always the first member and an owner.
         membership = Membership(
             user_id=creator.id,
-            workspace_id=workspace.id,
+            workspace_id=workspace_id,
             role=MembershipRole.OWNER,
         )
-        await self._memberships.add(membership)
+        await self._memberships.add(membership, workspace_id)
         try:
             await self._session.commit()
         except IntegrityError as exc:
@@ -95,25 +128,20 @@ class WorkspaceService:
             if workspace.id in roles
         ]
 
-    async def get(
-        self, workspace_id: uuid.UUID, user_id: uuid.UUID
-    ) -> WorkspaceResponse:
-        membership = await self._require_membership(workspace_id, user_id)
-        workspace = await self._workspaces.get_by_id(workspace_id)
-        assert workspace is not None  # checked by _require_membership
-        return self._response(workspace, membership.role)
+    def describe(self, context: WorkspaceContext) -> WorkspaceResponse:
+        return self._response(context.workspace, context.role)
 
     async def update(
-        self, workspace_id: uuid.UUID, payload: WorkspaceUpdate, user_id: uuid.UUID
+        self, context: WorkspaceContext, payload: WorkspaceUpdate
     ) -> WorkspaceResponse:
-        await self._require_owner(workspace_id, user_id)
-        workspace = await self._workspaces.get_by_id(workspace_id)
-        assert workspace is not None  # checked by _require_owner
-
+        workspace = context.workspace
+        workspace_id = workspace.id
         changes = payload.model_dump(exclude_unset=True)
         if "slug" in changes and changes["slug"] is not None:
-            existing = await self._workspaces.get_by_slug(changes["slug"])
-            if existing is not None and existing.id != workspace_id:
+            existing = await self._workspaces.get_by_slug(
+                changes["slug"], exclude_workspace_id=workspace_id
+            )
+            if existing is not None:
                 raise WorkspaceSlugAlreadyExistsError()
         for field, value in changes.items():
             if value is not None:
@@ -126,25 +154,21 @@ class WorkspaceService:
         # `updated_at` has an onupdate=func.now(), so it is expired after the
         # flush; refresh it through the async session before serializing.
         await self._session.refresh(workspace)
-        return self._response(workspace, MembershipRole.OWNER)
+        return self._response(workspace, context.role)
 
-    async def delete(self, workspace_id: uuid.UUID, user_id: uuid.UUID) -> None:
-        workspace = await self._require_owner(workspace_id, user_id)
-        await self._workspaces.delete(workspace)
+    async def delete(self, context: WorkspaceContext) -> None:
+        await self._workspaces.delete(context.workspace, context.workspace.id)
         await self._session.commit()
 
     # ---------- invitations ----------
 
     async def invite(
-        self,
-        workspace_id: uuid.UUID,
-        payload: InvitationCreate,
-        inviter_id: uuid.UUID,
+        self, context: WorkspaceContext, payload: InvitationCreate
     ) -> InvitationCreatedResponse:
-        await self._require_inviter(workspace_id, inviter_id)
+        workspace_id = context.workspace.id
         if (
             await self._memberships.get_by_email_in_workspace(
-                payload.email, workspace_id
+                workspace_id, payload.email
             )
             is not None
         ):
@@ -161,7 +185,7 @@ class WorkspaceService:
             expires_at=datetime.now(UTC)
             + timedelta(days=get_settings().invitation_ttl_days),
         )
-        await self._invitations.add(invitation)
+        await self._invitations.add(invitation, workspace_id)
         await self._session.commit()
 
         query = urlencode({"token": token})
@@ -179,17 +203,19 @@ class WorkspaceService:
         )
 
     async def list_invitations(
-        self, workspace_id: uuid.UUID, user_id: uuid.UUID
+        self, context: WorkspaceContext
     ) -> list[InvitationResponse]:
-        await self._require_membership(workspace_id, user_id)
-        invitations = await self._invitations.list_for_workspace(workspace_id)
+        invitations = await self._invitations.list_for_workspace(context.workspace.id)
         return [InvitationResponse.model_validate(item) for item in invitations]
 
     async def accept(self, token: str, user: User) -> WorkspaceResponse:
+        # No workspace context yet: the caller is not a member until this
+        # succeeds, so token lookup is deliberately global and then checked.
         invitation = await self._invitations.get_by_token_hash(hash_token(token))
         if invitation is None:
             raise InvitationNotFoundError()
 
+        workspace_id = invitation.workspace_id
         expires_at = invitation.expires_at
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=UTC)
@@ -202,40 +228,36 @@ class WorkspaceService:
         if invitation.email != user.email:
             raise InvitationEmailMismatchError()
 
-        workspace = await self._workspaces.get_by_id(invitation.workspace_id)
+        workspace = await self._workspaces.get(workspace_id)
         if workspace is None:
             raise WorkspaceNotFoundError()
-        if await self._memberships.get(user.id, workspace.id) is not None:
+        if await self._memberships.get(workspace_id, user.id) is not None:
             raise AlreadyMemberError()
 
         membership = Membership(
-            user_id=user.id, workspace_id=workspace.id, role=invitation.role
+            user_id=user.id, workspace_id=workspace_id, role=invitation.role
         )
-        await self._memberships.add(membership)
+        await self._memberships.add(membership, workspace_id)
         invitation.status = InvitationStatus.ACCEPTED
         await self._session.commit()
         return self._response(workspace, invitation.role)
 
     # ---------- members ----------
 
-    async def list_members(
-        self, workspace_id: uuid.UUID, user_id: uuid.UUID
-    ) -> list[MemberResponse]:
-        await self._require_membership(workspace_id, user_id)
-        return await self._memberships.list_for_workspace(workspace_id)
+    async def list_members(self, context: WorkspaceContext) -> list[MemberResponse]:
+        return await self._memberships.list_for_workspace(context.workspace.id)
 
     async def change_role(
         self,
-        workspace_id: uuid.UUID,
+        context: WorkspaceContext,
         target_user_id: uuid.UUID,
         payload: RoleUpdate,
-        user_id: uuid.UUID,
     ) -> MemberResponse:
+        workspace_id = context.workspace.id
         # Lock the workspace so concurrent owner changes cannot both pass the
         # last-owner check.
-        await self._workspaces.get_by_id_for_update(workspace_id)
-        await self._require_owner(workspace_id, user_id)
-        target = await self._memberships.get(target_user_id, workspace_id)
+        await self._workspaces.get_for_update(workspace_id)
+        target = await self._memberships.get(workspace_id, target_user_id)
         if target is None:
             raise MemberNotFoundError()
 
@@ -260,11 +282,11 @@ class WorkspaceService:
         )
 
     async def remove_member(
-        self, workspace_id: uuid.UUID, target_user_id: uuid.UUID, user_id: uuid.UUID
+        self, context: WorkspaceContext, target_user_id: uuid.UUID
     ) -> None:
-        await self._workspaces.get_by_id_for_update(workspace_id)
-        await self._require_owner(workspace_id, user_id)
-        target = await self._memberships.get(target_user_id, workspace_id)
+        workspace_id = context.workspace.id
+        await self._workspaces.get_for_update(workspace_id)
+        target = await self._memberships.get(workspace_id, target_user_id)
         if target is None:
             raise MemberNotFoundError()
 
@@ -273,41 +295,8 @@ class WorkspaceService:
             and await self._memberships.count_owners(workspace_id) <= 1
         ):
             raise LastOwnerError()
-        await self._memberships.delete(target)
+        await self._memberships.delete(target, workspace_id)
         await self._session.commit()
-
-    # ---------- helpers ----------
-
-    async def _require_membership(
-        self, workspace_id: uuid.UUID, user_id: uuid.UUID
-    ) -> Membership:
-        if await self._workspaces.get_by_id(workspace_id) is None:
-            raise WorkspaceNotFoundError()
-        membership = await self._memberships.get(user_id, workspace_id)
-        if membership is None:
-            raise NotWorkspaceMemberError()
-        return membership
-
-    async def _require_owner(
-        self, workspace_id: uuid.UUID, user_id: uuid.UUID
-    ) -> Workspace:
-        workspace = await self._workspaces.get_by_id(workspace_id)
-        if workspace is None:
-            raise WorkspaceNotFoundError()
-        membership = await self._memberships.get(user_id, workspace_id)
-        if membership is None:
-            raise NotWorkspaceMemberError()
-        if membership.role is not MembershipRole.OWNER:
-            raise OwnerRequiredError()
-        return workspace
-
-    async def _require_inviter(
-        self, workspace_id: uuid.UUID, user_id: uuid.UUID
-    ) -> None:
-        """Owners and admins can invite; plain members cannot."""
-        membership = await self._require_membership(workspace_id, user_id)
-        if membership.role not in (MembershipRole.OWNER, MembershipRole.ADMIN):
-            raise OwnerRequiredError("Only owners and admins can invite members")
 
     @staticmethod
     def _response(workspace: Workspace, role: MembershipRole) -> WorkspaceResponse:
