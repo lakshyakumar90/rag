@@ -3,8 +3,10 @@
 from collections.abc import Callable
 
 from core.config import get_settings
+from providers.llm.anthropic import AnthropicLLMProvider
 from providers.llm.base import LLMProvider
 from providers.llm.ollama import OllamaLLMProvider
+from providers.llm.openai_compat import OpenAICompatibleLLMProvider
 from providers.llm.types import UnknownProviderError
 
 ProviderFactory = Callable[..., LLMProvider]
@@ -33,3 +35,9 @@ def create_llm_provider(name: str | None = None, **opts: object) -> LLMProvider:
 
 # Built-in providers.
 register_provider("ollama", lambda **opts: OllamaLLMProvider(**opts))
+register_provider("openai", lambda **opts: OpenAICompatibleLLMProvider(**opts))
+# Explicit alias for non-OpenAI endpoints using the same wire format.
+register_provider(
+    "openai-compatible", lambda **opts: OpenAICompatibleLLMProvider(**opts)
+)
+register_provider("anthropic", lambda **opts: AnthropicLLMProvider(**opts))

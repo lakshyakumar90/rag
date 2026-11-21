@@ -58,6 +58,36 @@ class LLMProviderError(Exception):
     """Base error for provider wiring and runtime failures."""
 
 
+class ProviderAPIError(LLMProviderError):
+    """A provider rejected the request."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        code: str | None = None,
+        retry_after: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
+        self.code = code
+        self.retry_after = retry_after
+
+
+class AuthenticationError(ProviderAPIError):
+    """Missing, invalid, or unauthorized credentials."""
+
+
+class RateLimitError(ProviderAPIError):
+    """The provider rate limit was hit."""
+
+
+class ContextLengthError(ProviderAPIError):
+    """The prompt (or prompt + completion) exceeds the model's context window."""
+
+
 class UnknownProviderError(LLMProviderError):
     """No provider is registered under the requested name."""
 

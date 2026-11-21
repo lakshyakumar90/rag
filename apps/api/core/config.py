@@ -80,6 +80,22 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = Field(
         default=120.0, validation_alias="LLM_TIMEOUT_SECONDS"
     )
+    # Any OpenAI-compatible endpoint (OpenAI, Gemini compat, Ollama,
+    # OpenRouter, Groq) can be selected with OPENAI_BASE_URL + OPENAI_MODEL.
+    openai_base_url: str = Field(
+        default="https://api.openai.com/v1", validation_alias="OPENAI_BASE_URL"
+    )
+    openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
+    openai_model: str = Field(default="gpt-4o-mini", validation_alias="OPENAI_MODEL")
+    anthropic_base_url: str = Field(
+        default="https://api.anthropic.com", validation_alias="ANTHROPIC_BASE_URL"
+    )
+    anthropic_api_key: str | None = Field(
+        default=None, validation_alias="ANTHROPIC_API_KEY"
+    )
+    anthropic_model: str = Field(
+        default="claude-3-5-haiku-latest", validation_alias="ANTHROPIC_MODEL"
+    )
 
     # App / RAG
     database_url: str | None = Field(default=None, validation_alias="DATABASE_URL")
