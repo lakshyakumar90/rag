@@ -245,3 +245,36 @@ All routes are under `/api/v1` and require a Bearer access token:
   all four allowed types, duplicate detection scoped per workspace, role
   rules, cross-tenant denial on every endpoint, chunk cascade, 404s. 10 new
   tests; 45 total pass.
+
+## Background Worker (5.1)
+
+- **Choice: ARQ, not Celery.** The codebase is fully async (async SQLAlchemy,
+  async MinIO wrapper, async Redis), and Redis is already in compose. ARQ is
+  async-native and needs no separate broker/result backend; Celery would add a
+  second process model and sync task conventions. ARQ 0.28 requires `redis<6`,
+  so the existing dependency was pinned to `>=5,<6`.
+- **Queue abstraction:** `providers/queue.py` defines a `JobQueue` protocol and
+  an `ArqJobQueue` using a shared `ArqRedis` pool created in app startup and
+  closed on shutdown. Tests override `get_job_queue` with `FakeJobQueue`.
+  Upload commits the document row first, then enqueues `ingest_document`;
+  a queue outage is logged and leaves the row `pending` rather than failing a
+  successfully stored file (a later recovery sweep can re-enqueue).
+- **Status flow changes:** uploads now stay `pending` (previously marked
+  `ready` immediately); the worker moves them `processing` → `ready`.
+- **Worker container:** compose `worker` service shares the API image and runs
+  `arq workers.settings.WorkerSettings`, waiting for Redis/Postgres/migrations.
+  Shared env now also sets `REDIS_HOST`/`MINIO_HOST` for container networking.
+- **Retries/backoff/timeout/failure:** the task uses ARQ's `ctx["job_try"]` and
+  raises `Retry(defer=base * 2**(try-1))` with `INGEST_MAX_TRIES` (3) attempts;
+  an internal `asyncio.wait_for` enforces `INGEST_JOB_TIMEOUT_SECONDS` (so
+  timeouts are ordinary exceptions that participate in the same retry logic).
+  Only on the final attempt does the task persist `status=failed` and the
+  error text on the document row, then re-raise so ARQ marks the job failed.
+  The session factory is injected through `WorkerSettings.ctx`, making the
+  task testable against SQLite.
+- **Ingestion is a placeholder** (`workers/ingest.py`): it records state
+  transitions; real chunking/embedding lands in the RAG phase.
+- **Tests** (`apps/api/tests/test_worker.py`): upload enqueues the right
+  document id, queue outage does not fail upload, success → ready, retry
+  backoff values, no failure recorded before the last try, terminal failure
+  persisted, timeout persisted, worker settings. 7 new tests; 52 total pass.
