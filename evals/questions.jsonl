@@ -1,0 +1,42 @@
+{"id":"q01","question":"Where does day one onboarding begin?","expected_answer":"Reception desk on floor 2","expected_doc":"onboarding.txt","expected_pages":[1],"answerable":true}
+{"id":"q02","question":"Who issues your badge on the first day?","expected_answer":"Facilities","expected_doc":"onboarding.txt","expected_pages":[1],"answerable":true}
+{"id":"q03","question":"When does the temporary password expire?","expected_answer":"72 hours","expected_doc":"onboarding.txt","expected_pages":[2],"answerable":true}
+{"id":"q04","question":"How is the email alias formed?","expected_answer":"firstname.lastname@northwind.example","expected_doc":"onboarding.txt","expected_pages":[2],"answerable":true}
+{"id":"q05","question":"What must you bring on day one?","expected_answer":"photo ID","expected_doc":"onboarding.txt","expected_pages":[1],"answerable":true}
+{"id":"q06","question":"What laptop do engineers receive?","expected_answer":"16-inch laptop","expected_doc":"onboarding.txt","expected_pages":[3],"answerable":true}
+{"id":"q07","question":"How long do you have to return equipment after departure?","expected_answer":"five business days","expected_doc":"onboarding.txt","expected_pages":[3],"answerable":true}
+{"id":"q08","question":"How do you request an extra monitor?","expected_answer":"equipment ticket","expected_doc":"onboarding.txt","expected_pages":[3],"answerable":true}
+{"id":"q09","question":"When does health coverage start?","expected_answer":"first day of the month following your start date","expected_doc":"benefits.txt","expected_pages":[1],"answerable":true}
+{"id":"q10","question":"What share of specialist visits does the standard plan cover?","expected_answer":"80 percent","expected_doc":"benefits.txt","expected_pages":[1],"answerable":true}
+{"id":"q11","question":"Within how many days should a dependent be added?","expected_answer":"30 days","expected_doc":"benefits.txt","expected_pages":[1],"answerable":true}
+{"id":"q12","question":"How much paid time off accrues per month?","expected_answer":"1.75 days","expected_doc":"benefits.txt","expected_pages":[2],"answerable":true}
+{"id":"q13","question":"What is the paid time off cap?","expected_answer":"25 days","expected_doc":"benefits.txt","expected_pages":[2],"answerable":true}
+{"id":"q14","question":"How long is primary parental leave?","expected_answer":"16 weeks","expected_doc":"benefits.txt","expected_pages":[2],"answerable":true}
+{"id":"q15","question":"When does the retirement enrollment window close?","expected_answer":"15 December","expected_doc":"benefits.txt","expected_pages":[3],"answerable":true}
+{"id":"q16","question":"How far in advance must flights be booked?","expected_answer":"14 days","expected_doc":"expenses.txt","expected_pages":[1],"answerable":true}
+{"id":"q17","question":"Which travel class is the default for short trips?","expected_answer":"Economy class","expected_doc":"expenses.txt","expected_pages":[1],"answerable":true}
+{"id":"q18","question":"Which airline is preferred?","expected_answer":"Skyline Air","expected_doc":"expenses.txt","expected_pages":[1],"answerable":true}
+{"id":"q19","question":"What is the hotel reimbursement limit in New York?","expected_answer":"240 USD","expected_doc":"expenses.txt","expected_pages":[2],"answerable":true}
+{"id":"q20","question":"What is the daily meal allowance?","expected_answer":"60 USD","expected_doc":"expenses.txt","expected_pages":[2],"answerable":true}
+{"id":"q21","question":"When must expense reports be submitted?","expected_answer":"30 days","expected_doc":"expenses.txt","expected_pages":[3],"answerable":true}
+{"id":"q22","question":"Above what amount are receipts required?","expected_answer":"25 USD","expected_doc":"expenses.txt","expected_pages":[3],"answerable":true}
+{"id":"q23","question":"How long must passwords be?","expected_answer":"14 characters","expected_doc":"security.txt","expected_pages":[1],"answerable":true}
+{"id":"q24","question":"How many old passwords cannot be reused?","expected_answer":"12 passwords","expected_doc":"security.txt","expected_pages":[1],"answerable":true}
+{"id":"q25","question":"Which multi-factor method is accepted?","expected_answer":"Hardware keys","expected_doc":"security.txt","expected_pages":[2],"answerable":true}
+{"id":"q26","question":"Within how long must a lost hardware key be reported?","expected_answer":"one hour","expected_doc":"security.txt","expected_pages":[2],"answerable":true}
+{"id":"q27","question":"Which data classification level is highest?","expected_answer":"restricted","expected_doc":"security.txt","expected_pages":[3],"answerable":true}
+{"id":"q28","question":"Where must restricted files be stored?","expected_answer":"approved encrypted drive","expected_doc":"security.txt","expected_pages":[3],"answerable":true}
+{"id":"q29","question":"How quickly must security incidents be reported?","expected_answer":"24 hours","expected_doc":"security.txt","expected_pages":[3],"answerable":true}
+{"id":"q30","question":"Which VPN gateway should you use?","expected_answer":"Frankfurt","expected_doc":"troubleshooting.txt","expected_pages":[1],"answerable":true}
+{"id":"q31","question":"At what point does the VPN client typically fail?","expected_answer":"40 percent","expected_doc":"troubleshooting.txt","expected_pages":[1],"answerable":true}
+{"id":"q32","question":"Which VPN gateway is reserved for the APAC team?","expected_answer":"Sydney","expected_doc":"troubleshooting.txt","expected_pages":[1],"answerable":true}
+{"id":"q33","question":"What is the mailbox quota?","expected_answer":"10 GB","expected_doc":"troubleshooting.txt","expected_pages":[2],"answerable":true}
+{"id":"q34","question":"Which folder should you empty when messages go missing?","expected_answer":"deleted folder","expected_doc":"troubleshooting.txt","expected_pages":[2],"answerable":true}
+{"id":"q35","question":"What is the service desk extension?","expected_answer":"4357","expected_doc":"troubleshooting.txt","expected_pages":[3],"answerable":true}
+{"id":"q36","question":"What should you do for a cracked screen?","expected_answer":"request an exchange","expected_doc":"troubleshooting.txt","expected_pages":[3],"answerable":true}
+{"id":"q37","question":"What is the company car policy?","expected_answer":"I don't know","answerable":false}
+{"id":"q38","question":"How many vacation days does the chief executive have?","expected_answer":"I don't know","answerable":false}
+{"id":"q39","question":"What is the production database password?","expected_answer":"I don't know","answerable":false}
+{"id":"q40","question":"Which airline is preferred for interplanetary travel?","expected_answer":"I don't know","answerable":false}
+{"id":"q41","question":"What is the office address in Tokyo?","expected_answer":"I don't know","answerable":false}
+{"id":"q42","question":"How do I reset the smoke detector?","expected_answer":"I don't know","answerable":false}
