@@ -16,7 +16,13 @@ from models import MembershipRole, User
 from providers.minio import MinioStorageClient
 from providers.queue import ArqJobQueue, JobQueue, get_arq_pool
 from providers.storage import StorageClient
-from services import AuthService, DocumentService, UserService, WorkspaceService
+from services import (
+    AuthService,
+    DocumentService,
+    ProviderConfigService,
+    UserService,
+    WorkspaceService,
+)
 from services.exceptions import (
     InsufficientRoleError,
     InvalidAccessTokenError,
@@ -67,6 +73,12 @@ def get_document_service(
     queue: Annotated[JobQueue, Depends(get_job_queue)],
 ) -> DocumentService:
     return DocumentService(session, storage, queue)
+
+
+def get_provider_config_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ProviderConfigService:
+    return ProviderConfigService(session)
 
 
 async def get_current_user_id(

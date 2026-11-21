@@ -123,6 +123,30 @@ class StorageUnavailableError(DomainError):
     message = "Object storage is unavailable; please try again later"
 
 
+class ProviderConfigNotFoundError(DomainError):
+    status_code = 404
+    code = "PROVIDER_CONFIG_NOT_FOUND"
+    message = "Provider configuration not found"
+
+
+class UnsafeBaseURLError(DomainError):
+    status_code = 400
+    code = "UNSAFE_BASE_URL"
+    message = "base_url must use a public http(s) host"
+
+
+class EncryptionUnavailableError(DomainError):
+    status_code = 503
+    code = "ENCRYPTION_UNAVAILABLE"
+    message = "API key encryption is not configured on this server"
+
+
+class ConnectionTestError(DomainError):
+    status_code = 502
+    code = "CONNECTION_TEST_FAILED"
+    message = "The provider connection test failed"
+
+
 class InsufficientRoleError(DomainError):
     status_code = 403
     code = "INSUFFICIENT_ROLE"

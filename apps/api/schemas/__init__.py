@@ -7,6 +7,13 @@ from schemas.auth import (
     TokenResponse,
 )
 from schemas.document import DocumentPage, DocumentResponse, DownloadUrlResponse
+from schemas.provider_config import (
+    ConnectionTestResponse,
+    ProviderConfigCreate,
+    ProviderConfigResponse,
+    ProviderConfigUpdate,
+    ProviderType,
+)
 from schemas.user import UserResponse, UserUpdate
 from schemas.workspace import (
     InvitationAcceptRequest,
@@ -22,6 +29,7 @@ from schemas.workspace import (
 
 __all__ = [
     "ChangePasswordRequest",
+    "ConnectionTestResponse",
     "DocumentPage",
     "DocumentResponse",
     "DownloadUrlResponse",
@@ -31,6 +39,10 @@ __all__ = [
     "InvitationResponse",
     "LoginRequest",
     "MemberResponse",
+    "ProviderConfigCreate",
+    "ProviderConfigResponse",
+    "ProviderConfigUpdate",
+    "ProviderType",
     "RoleUpdate",
     "RefreshRequest",
     "RegisterRequest",
