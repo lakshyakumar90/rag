@@ -695,3 +695,55 @@ Three strategies in `workers/chunking.py`, all returning the same `Chunk`
   fixed in one batch and scored resolved; final disposition **ship**. Detector
   clean. Captures live in `apps/web/.impeccable/review/` (desktop/mobile, both
   themes, plus 320px).
+
+## Production Hardening (9)
+
+- **Rate limits:** `UserRateLimiter` keeps one Redis counter per user and action
+  (`ratelimit:user:{id}:{chat|upload}`), atomically incremented with an
+  `INCR`/first-`EXPIRE` Lua script. Chat and upload endpoints call `check()`;
+  exceeding the window returns 429 with `Retry-After`, and a Redis outage
+  returns 503. This **fails closed** on purpose: login throttling keeps its
+  fail-open behaviour (a cache outage must not lock everyone out), but chat
+  and upload are metered and must not run unbounded during an outage.
+- **Feedback:** `POST /workspaces/{id}/messages/{message_id}/feedback` stores a
+  thumbs up/down plus an optional comment, unique per (message, user) so a
+  second vote updates in place. Only assistant messages in the caller's workspace
+  are accepted (404 otherwise); tenant membership is enforced by the workspace
+  dependency.
+- **Usage v1 is derived, not counted:** `GET /workspaces/{id}/usage` computes
+  queries from user messages, tokens from assistant `input_tokens +
+  output_tokens`, storage from `Document.size`, and includes feedback totals.
+  `answerable` is now persisted on assistant messages by both the streaming and
+  non-streaming chat paths so low-confidence answers can be reported.
+- **Analytics:** `GET /workspaces/{id}/usage/analytics` (owner/admin) reports
+  the ten most asked normalized questions, a low-confidence count together with
+  the questions that produced those answers (paired by conversation and message
+  sequence), and the ten most cited documents. Most-cited is computed in Python by reading the
+  `Message.citations` JSON. This is adequate for v1 volumes but does not scale
+  to arbitrary history; a normalized citation table is the natural next step.
+- **Audit log:** `AuditLog` is append-only (no update/delete endpoints). Rows
+  keep `actor_email` and use nullable `user_id`/`workspace_id` with
+  `ondelete="SET NULL"` so deleting an account or workspace preserves history.
+  Uploads, deletes, reindex, workspace deletion, member role changes/removals,
+  provider key add/rotate/remove, workspace export and account deletion are
+  recorded. `GET /workspaces/{id}/audit-log` is owner/admin only.
+- **Security:** a `SecurityHeadersMiddleware` sets nosniff, DENY frame options,
+  no-referrer, a restrictive CSP, cross-origin policies and HSTS on HTTPS.
+  Input validation remains Pydantic/FastAPI-first; the validation error handler
+  strips submitted values so secrets are not echoed back.
+- **Account data:** `DELETE /account` removes storage objects, owned
+  workspaces, documents, conversations, memberships, invitations, provider
+  configs and refresh tokens, while keeping a redacted audit trail.
+  `GET /workspaces/{id}/export` returns workspace metadata (documents,
+  conversations, messages, members) as an attachment; file bytes are not
+  included in v1.
+- **Deferred:** password reset and email verification need a mail transport,
+  which is not available locally, and are outside the "Done when" criteria.
+- **Verification:** ruff, format and mypy clean; 160 backend tests pass,
+  including 12 new tests for limits, feedback, usage/analytics, audit, export,
+  deletion and security headers. `alembic upgrade head --sql` emits the new
+  tables and indexes. `pnpm audit` reports 19 pre-existing advisories in
+  transitive frontend packages (Next.js/sharp, zod, etc.); the lockfile is
+  user-owned and was not changed, so an upgrade is left as a follow-up.
+  `pip-audit` is not installed in the local environment, so the Python
+  dependency audit is documented as not run.

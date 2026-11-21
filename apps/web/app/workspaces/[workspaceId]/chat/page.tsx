@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { History, RotateCw, Square } from "lucide-react";
+import { History, MessageSquarePlus, RotateCw, Square, ThumbsDown, ThumbsUp } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../../../../components/ui/button";
 import { Input } from "../../../../components/ui/input";
@@ -37,6 +37,9 @@ function lastAssistantIndex(messages: DisplayMessage[]): number {
   return -1;
 }
 
+// Streamed answers get a temporary client id until the thread is reloaded.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export default function ChatPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>();
   const queryClient = useQueryClient();
@@ -49,6 +52,10 @@ export default function ChatPage() {
   const [snippets, setSnippets] = useState<Record<string, SearchResponse["items"][number]>>({});
   const [activeSource, setActiveSource] = useState<SourceRef | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [votes, setVotes] = useState<Record<string, "up" | "down">>({});
+  const [commentTarget, setCommentTarget] = useState<string | null>(null);
+  const [comment, setComment] = useState("");
+  const [commentVote, setCommentVote] = useState<"up" | "down">("up");
 
   const { data: conversations, isLoading } = useQuery({
     queryKey: ["conversations", workspaceId],
@@ -85,6 +92,25 @@ export default function ChatPage() {
       refreshConversations();
       toast.success("Conversation deleted");
     },
+  });
+
+  const feedback = useMutation({
+    mutationFn: ({
+      messageId,
+      vote,
+      note,
+    }: {
+      messageId: string;
+      vote: "up" | "down";
+      note?: string;
+    }) => api.setFeedback(workspaceId, messageId, vote, note),
+    onSuccess: (result) => {
+      setVotes((current) => ({ ...current, [result.message_id]: result.vote as "up" | "down" }));
+      setCommentTarget(null);
+      setComment("");
+      toast.success("Thanks for the feedback");
+    },
+    onError: () => toast.error("Could not save feedback"),
   });
 
   async function loadConversation(id: string) {
@@ -304,6 +330,49 @@ export default function ChatPage() {
                     ))}
                   </div>
                 ) : null}
+                {message.role === "assistant" && !message.streaming && UUID.test(message.id) ? (
+                  <div className="mt-2 flex items-center gap-1 text-muted-foreground">
+                    <button
+                      type="button"
+                      aria-label="Good answer"
+                      title="Good answer"
+                      onClick={() =>
+                        feedback.mutate({ messageId: message.id, vote: "up" })
+                      }
+                      className={`rounded-[6px] p-1 hover:bg-muted hover:text-foreground ${
+                        votes[message.id] === "up" ? "text-accent" : ""
+                      }`}
+                    >
+                      <ThumbsUp size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Bad answer"
+                      title="Bad answer"
+                      onClick={() =>
+                        feedback.mutate({ messageId: message.id, vote: "down" })
+                      }
+                      className={`rounded-[6px] p-1 hover:bg-muted hover:text-foreground ${
+                        votes[message.id] === "down" ? "text-accent" : ""
+                      }`}
+                    >
+                      <ThumbsDown size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Add feedback comment"
+                      title="Add a comment"
+                      onClick={() => {
+                        setCommentTarget(message.id);
+                        setCommentVote(votes[message.id] ?? "up");
+                        setComment("");
+                      }}
+                      className="rounded-[6px] p-1 hover:bg-muted hover:text-foreground"
+                    >
+                      <MessageSquarePlus size={13} />
+                    </button>
+                  </div>
+                ) : null}
               </article>
             ))
           ) : (
@@ -375,6 +444,68 @@ export default function ChatPage() {
               </p>
             </>
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(commentTarget)}
+        onOpenChange={(open) => {
+          if (!open) setCommentTarget(null);
+        }}
+      >
+        <DialogContent className="p-5">
+          <DialogTitle className="text-[14px] font-semibold">Rate this answer</DialogTitle>
+          <DialogDescription className="mt-1 text-[12px] text-muted-foreground">
+            Optional comment — it helps improve grounded answers.
+          </DialogDescription>
+          <div className="mt-4 flex gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={commentVote === "up" ? "default" : "outline"}
+              onClick={() => setCommentVote("up")}
+            >
+              <ThumbsUp size={13} /> Good
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={commentVote === "down" ? "default" : "outline"}
+              onClick={() => setCommentVote("down")}
+            >
+              <ThumbsDown size={13} /> Bad
+            </Button>
+          </div>
+          <textarea
+            value={comment}
+            onChange={(event) => setComment(event.target.value)}
+            maxLength={1000}
+            rows={4}
+            aria-label="Feedback comment"
+            placeholder="What could be better?"
+            className="mt-3 w-full resize-y rounded-[8px] border border-border bg-surface px-3 py-2 text-[13px] placeholder:text-muted-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+          />
+          <div className="mt-4 flex justify-end gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setCommentTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={feedback.isPending}
+              onClick={() =>
+                commentTarget
+                  ? feedback.mutate({
+                      messageId: commentTarget,
+                      vote: commentVote,
+                      note: comment.trim() || undefined,
+                    })
+                  : undefined
+              }
+            >
+              Submit
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

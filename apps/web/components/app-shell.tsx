@@ -6,6 +6,7 @@ import { useParams, usePathname, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Command } from "cmdk";
 import {
+  BarChart3,
   ChevronDown,
   FileText,
   LayoutGrid,
@@ -47,6 +48,7 @@ const NAV = [
   { href: "documents", label: "Documents", icon: FileText },
   { href: "chat", label: "Chat", icon: MessageSquare },
   { href: "members", label: "Members", icon: Users },
+  { href: "usage", label: "Usage", icon: BarChart3 },
   { href: "settings", label: "Settings", icon: Settings2 },
 ] as const;
 

@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, KeyRound, Trash2, XCircle } from "lucide-react";
+import { CheckCircle2, Download, KeyRound, Trash2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../../../../components/ui/button";
 import { Input } from "../../../../components/ui/input";
@@ -16,6 +17,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../../../components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "../../../../components/ui/dialog";
 import { api } from "../../../../lib/api/client";
 import { useAuth } from "../../../../lib/auth/auth-provider";
 
@@ -24,6 +31,9 @@ const PROVIDER_TYPES = ["openai", "openai-compatible", "anthropic", "ollama"] as
 export default function SettingsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const { workspaceId } = useParams<{ workspaceId: string }>();
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [fullName, setFullName] = useState(user?.full_name ?? "");
   const [providerType, setProviderType] = useState<(typeof PROVIDER_TYPES)[number]>("openai");
   const [baseUrl, setBaseUrl] = useState("");
@@ -74,6 +84,31 @@ export default function SettingsPage() {
     mutationFn: (id: string) => api.deleteProviderConfig(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["provider-configs"] }),
   });
+  const exportWorkspace = useMutation({
+    mutationFn: () => api.exportWorkspace(workspaceId),
+    onSuccess: (data) => {
+      const url = URL.createObjectURL(
+        new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }),
+      );
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `workspace-${workspaceId}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success("Export downloaded");
+    },
+    onError: () => toast.error("Could not export the workspace"),
+  });
+  const deleteAccount = useMutation({
+    mutationFn: () => api.deleteAccount(),
+    onSuccess: async () => {
+      setDeleteOpen(false);
+      queryClient.clear();
+      router.replace("/register");
+      toast.success("Account deleted");
+    },
+    onError: () => toast.error("Could not delete the account"),
+  });
 
   return (
     <Tabs defaultValue="profile">
@@ -81,6 +116,7 @@ export default function SettingsPage() {
         <TabsTrigger value="profile">Profile</TabsTrigger>
         <TabsTrigger value="providers">AI providers</TabsTrigger>
         <TabsTrigger value="cli">Local CLI</TabsTrigger>
+        <TabsTrigger value="data">Data</TabsTrigger>
       </TabsList>
 
       <TabsContent value="profile">
@@ -238,6 +274,66 @@ export default function SettingsPage() {
             ))}
           </div>
         </section>
+      </TabsContent>
+
+      <TabsContent value="data">
+        <section className="max-w-xl">
+          <h2 className="text-[14px] font-semibold">Export</h2>
+          <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+            Download this workspace&apos;s documents, conversations, messages and
+            members as JSON. File contents are not included.
+          </p>
+          <Button
+            className="mt-4"
+            variant="outline"
+            size="sm"
+            disabled={exportWorkspace.isPending}
+            onClick={() => exportWorkspace.mutate()}
+          >
+            <Download size={13} /> Export workspace
+          </Button>
+        </section>
+
+        <section className="mt-10 border-t border-border pt-6">
+          <h2 className="text-[14px] font-semibold text-destructive">Danger zone</h2>
+          <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+            Permanently delete your account, workspaces, documents and chat history.
+            A redacted audit record is kept. This cannot be undone.
+          </p>
+          <Button
+            className="mt-4"
+            variant="outline"
+            size="sm"
+            data-destructive
+            onClick={() => setDeleteOpen(true)}
+          >
+            <Trash2 size={13} /> Delete account
+          </Button>
+        </section>
+
+        <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+          <DialogContent className="p-5">
+            <DialogTitle className="text-[14px] font-semibold">Delete your account?</DialogTitle>
+            <DialogDescription className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
+              Every workspace you own and all of their data will be removed. This
+              action is permanent.
+            </DialogDescription>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setDeleteOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                data-destructive
+                disabled={deleteAccount.isPending}
+                onClick={() => deleteAccount.mutate()}
+              >
+                Delete permanently
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </TabsContent>
     </Tabs>
   );

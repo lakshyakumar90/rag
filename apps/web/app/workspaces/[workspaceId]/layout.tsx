@@ -12,6 +12,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
     documents: "Documents",
     chat: "Chat",
     members: "Members",
+    usage: "Usage",
     settings: "Settings",
   };
   return (

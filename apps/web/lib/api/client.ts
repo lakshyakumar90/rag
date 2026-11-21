@@ -23,6 +23,11 @@ export type SearchResponse = S["SearchResponse"];
 export type ProviderConfig = S["ProviderConfigResponse"];
 export type ConnectionTest = S["ConnectionTestResponse"];
 export type CLIStatus = S["CLIStatusResponse"];
+export type FeedbackRequest = S["FeedbackRequest"];
+export type FeedbackResponse = S["FeedbackResponse"];
+export type Usage = S["UsageResponse"];
+export type Analytics = S["AnalyticsResponse"];
+export type AuditEntry = S["AuditEntryResponse"];
 
 /** Static (parameterless) path, checked against the generated schema. */
 export function request<T>(path: keyof paths, init?: RequestInit): Promise<T> {
@@ -142,4 +147,26 @@ export const api = {
   cliStatus: () => request<CLIStatus>("/api/v1/providers/cli/status"),
   acceptInvitation: (token: string) =>
     apiRequest<Workspace>("/api/v1/invitations/accept", json({ token })),
+
+  setFeedback: (
+    workspaceId: string,
+    messageId: string,
+    vote: "up" | "down",
+    comment?: string | null,
+  ) =>
+    apiRequest<FeedbackResponse>(
+      `/api/v1/workspaces/${workspaceId}/messages/${messageId}/feedback`,
+      json({ vote, comment: comment ?? null }),
+    ),
+  usage: (workspaceId: string) =>
+    requestPath<Usage>(`/api/v1/workspaces/${workspaceId}/usage`),
+  analytics: (workspaceId: string) =>
+    requestPath<Analytics>(`/api/v1/workspaces/${workspaceId}/usage/analytics`),
+  auditLog: (workspaceId: string) =>
+    requestPath<AuditEntry[]>(`/api/v1/workspaces/${workspaceId}/audit-log`),
+  exportWorkspace: (workspaceId: string) =>
+    requestPath<Record<string, unknown>>(
+      `/api/v1/workspaces/${workspaceId}/export`,
+    ),
+  deleteAccount: () => apiRequest<void>("/api/v1/account", { method: "DELETE" }),
 };
