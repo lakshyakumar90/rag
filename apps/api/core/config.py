@@ -116,6 +116,16 @@ class Settings(BaseSettings):
         default=900, validation_alias="PRESIGNED_URL_TTL_SECONDS"
     )
 
+    # Background ingestion worker (ARQ)
+    ingest_max_tries: int = Field(default=3, validation_alias="INGEST_MAX_TRIES")
+    ingest_retry_backoff_seconds: float = Field(
+        default=2.0, validation_alias="INGEST_RETRY_BACKOFF_SECONDS"
+    )
+    ingest_job_timeout_seconds: float = Field(
+        default=300.0, validation_alias="INGEST_JOB_TIMEOUT_SECONDS"
+    )
+    worker_max_jobs: int = Field(default=10, validation_alias="WORKER_MAX_JOBS")
+
     # CORS (comma-separated origins, e.g. "http://localhost:3000,https://app.example.com")
     cors_origins: str = Field(default="", validation_alias="CORS_ORIGINS")
     cors_allow_credentials: bool = Field(

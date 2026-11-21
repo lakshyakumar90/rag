@@ -8,6 +8,8 @@ Redis for login would turn a cache outage into a full authentication outage.
 
 import hashlib
 import logging
+from collections.abc import Awaitable
+from typing import cast
 
 from fastapi import Request
 from redis.asyncio import Redis
@@ -69,12 +71,17 @@ class LoginRateLimiter:
         """Count this attempt and reject it if the window limit is exceeded."""
         keys = self._keys(ip, email)
         try:
-            result = await self._redis.eval(
-                _INCREMENT_SCRIPT,
-                2,
-                keys[0],
-                keys[1],
-                self._settings.login_rate_limit_window_seconds,
+            # redis 5.x types `eval` as possibly returning a str; our Lua
+            # script always returns a list of integers.
+            result = await cast(
+                Awaitable[list[int]],
+                self._redis.eval(
+                    _INCREMENT_SCRIPT,
+                    2,
+                    keys[0],
+                    keys[1],
+                    self._settings.login_rate_limit_window_seconds,
+                ),
             )
         except RedisError as exc:
             logger.warning(
