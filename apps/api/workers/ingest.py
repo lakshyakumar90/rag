@@ -11,7 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from core.config import get_settings
 from models import Document, DocumentChunk, DocumentStatus
 from providers.storage import StorageClient
-from workers.extraction import ExtractionError, chunk_pages, extract
+from workers.chunking import chunk_document
+from workers.extraction import ExtractionError, extract
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,14 @@ async def _process(
 
     data = await storage.download(str(workspace_id), storage_key)
     result = await asyncio.to_thread(extract, data, mime_type)
-    chunks = chunk_pages(result.pages)
+    settings = get_settings()
+    chunks = await asyncio.to_thread(
+        chunk_document,
+        result,
+        settings.chunking_strategy,
+        settings.chunk_target_tokens,
+        settings.chunk_overlap_tokens,
+    )
 
     async with factory() as session:
         document = await session.get(Document, document_id)
@@ -53,7 +61,9 @@ async def _process(
                     workspace_id=workspace_id,
                     chunk_index=chunk.index,
                     page_number=chunk.page_number,
-                    content=chunk.content,
+                    content=chunk.text,
+                    heading_path=list(chunk.heading_path) or None,
+                    token_count=chunk.token_count,
                 )
             )
         document.page_count = result.page_count

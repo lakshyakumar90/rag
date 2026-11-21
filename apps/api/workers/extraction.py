@@ -3,7 +3,7 @@
 import io
 import re
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import ceil
 
 import pymupdf
@@ -31,21 +31,23 @@ class ExtractedPage:
 
 
 @dataclass(frozen=True)
-class ExtractionResult:
-    pages: list[ExtractedPage]
-    page_count: int | None  # real page count for PDFs; None for other formats
+class ExtractedSection:
+    """A region of a document with its heading hierarchy (empty for PDF/TXT)."""
+
+    page_number: int | None
+    heading_path: tuple[str, ...]
+    text: str
 
 
 @dataclass(frozen=True)
-class Chunk:
-    page_number: int | None
-    index: int
-    content: str
+class ExtractionResult:
+    pages: list[ExtractedPage]
+    page_count: int | None  # real page count for PDFs; None for other formats
+    sections: list[ExtractedSection] = field(default_factory=list)
 
 
 _MIN_TEXT_CHARS = 20
 _REPEAT_RATIO = 0.6
-_DEFAULT_CHUNK_CHARS = 1000
 
 
 def _clean_text(text: str) -> str:
@@ -119,14 +121,68 @@ def extract_pdf(data: bytes) -> ExtractionResult:
 
 def extract_docx(data: bytes) -> ExtractionResult:
     document = DocxDocument(io.BytesIO(data))
-    parts = [paragraph.text for paragraph in document.paragraphs]
+    heading_stack: list[str] = []
+    buffer: list[str] = []
+    sections: list[ExtractedSection] = []
+
+    def flush() -> None:
+        if buffer:
+            sections.append(
+                ExtractedSection(None, tuple(heading_stack), "\n".join(buffer))
+            )
+            buffer.clear()
+
+    for paragraph in document.paragraphs:
+        text = paragraph.text.strip()
+        style = paragraph.style
+        match = re.match(r"^Heading\s+(\d+)$", style.name if style else "")
+        if match:
+            flush()
+            level = int(match.group(1))
+            heading_stack = heading_stack[: level - 1] + [text]
+        elif text:
+            buffer.append(text)
+    flush()
+
     for table in document.tables:
         for row in table.rows:
-            parts.append(" | ".join(cell.text for cell in row.cells))
-    text = "\n".join(part for part in parts if part.strip())
-    if len(text.strip()) < _MIN_TEXT_CHARS:
+            values = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+            if values:
+                sections.append(
+                    ExtractedSection(None, tuple(heading_stack), " | ".join(values))
+                )
+
+    if not sections:
         raise EmptyDocumentError("DOCX contains no selectable text")
-    return ExtractionResult([ExtractedPage(None, text)], page_count=None)
+    text = "\n".join(section.text for section in sections)
+    return ExtractionResult(
+        pages=[ExtractedPage(None, text)], page_count=None, sections=sections
+    )
+
+
+def _markdown_sections(text: str) -> list[ExtractedSection]:
+    """Turn ATX headings into a heading path per section."""
+    heading_stack: list[str] = []
+    buffer: list[str] = []
+    sections: list[ExtractedSection] = []
+
+    def flush() -> None:
+        if buffer:
+            sections.append(
+                ExtractedSection(None, tuple(heading_stack), "\n".join(buffer))
+            )
+            buffer.clear()
+
+    for line in text.splitlines():
+        match = re.match(r"^(#{1,6})\s+(.*?)\s*$", line)
+        if match:
+            flush()
+            level = len(match.group(1))
+            heading_stack = heading_stack[: level - 1] + [match.group(2).strip()]
+        else:
+            buffer.append(line)
+    flush()
+    return sections or [ExtractedSection(None, (), text)]
 
 
 def extract_plain(data: bytes, mime_type: str) -> ExtractionResult:
@@ -136,7 +192,13 @@ def extract_plain(data: bytes, mime_type: str) -> ExtractionResult:
         raise ExtractionError("Text file is not valid UTF-8") from exc
     if len(text.strip()) < _MIN_TEXT_CHARS:
         raise EmptyDocumentError("Text file is empty or contains no usable text")
-    return ExtractionResult([ExtractedPage(None, text)], page_count=None)
+
+    sections = _markdown_sections(text) if mime_type == "text/markdown" else []
+    return ExtractionResult(
+        pages=[ExtractedPage(None, text)],
+        page_count=None,
+        sections=sections,
+    )
 
 
 def extract(data: bytes, mime_type: str) -> ExtractionResult:
@@ -159,23 +221,24 @@ def extract(data: bytes, mime_type: str) -> ExtractionResult:
     cleaned_pages = [page for page in cleaned_pages if page.text]
     if not cleaned_pages:
         raise EmptyDocumentError("No usable text remained after cleaning")
-    return ExtractionResult(pages=cleaned_pages, page_count=result.page_count)
 
+    if result.sections:
+        sections = [
+            ExtractedSection(
+                section.page_number,
+                section.heading_path,
+                _clean_text(section.text),
+            )
+            for section in result.sections
+        ]
+        sections = [section for section in sections if section.text]
+    else:
+        sections = [
+            ExtractedSection(page.page_number, (), page.text) for page in cleaned_pages
+        ]
+    if not sections:
+        raise EmptyDocumentError("No usable text remained after cleaning")
 
-def chunk_pages(
-    pages: list[ExtractedPage], max_chars: int = _DEFAULT_CHUNK_CHARS
-) -> list[Chunk]:
-    """Split cleaned pages into chunks, preserving page provenance."""
-    chunks: list[Chunk] = []
-    for page in pages:
-        buffer: list[str] = []
-        length = 0
-        for word in page.text.split():
-            if buffer and length + len(word) + 1 > max_chars:
-                chunks.append(Chunk(page.page_number, len(chunks), " ".join(buffer)))
-                buffer, length = [], 0
-            buffer.append(word)
-            length += len(word) + 1
-        if buffer:
-            chunks.append(Chunk(page.page_number, len(chunks), " ".join(buffer)))
-    return chunks
+    return ExtractionResult(
+        pages=cleaned_pages, page_count=result.page_count, sections=sections
+    )
