@@ -147,6 +147,25 @@ pnpm exec turbo link
 pnpm exec turbo link
 ```
 
+## Local CLI providers (experimental, disabled by default)
+
+The optional `cli-codex`, `cli-opencode` and `cli-claude` providers shell out to
+CLIs installed **on the host**. They are disabled unless `ENABLE_CLI_PROVIDERS=true`.
+
+> **Warning:** these providers can spend your CLI account's quota and are only
+> safe when the CLI is invoked read-only with all tools denied. The backend runs
+> each CLI in a fresh temp directory with no shell, no auto-approve flags, a
+> hard timeout and a concurrency limit. Do not enable them on an untrusted
+> multi-tenant host. Uploaded document text is treated as untrusted data, not
+> instructions.
+
+**Docker:** CLI providers do **not** run inside the API container because the
+container has neither the host's CLI binaries nor its login credentials. Run the
+backend on the host for this feature, or add a host bridge service that the
+container calls through `host.docker.internal` (not included in this phase).
+The API refuses to construct a CLI provider when it detects it is in a
+container. Check availability with `GET /api/v1/providers/cli/status`.
+
 ## Useful Links
 
 Learn more about the power of Turborepo:

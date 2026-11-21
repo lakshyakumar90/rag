@@ -104,6 +104,15 @@ class Settings(BaseSettings):
         default=False, validation_alias="LOCAL_MODE_ENABLED"
     )
 
+    # Local CLI providers (codex / opencode / claude), disabled by default.
+    enable_cli_providers: bool = Field(
+        default=False, validation_alias="ENABLE_CLI_PROVIDERS"
+    )
+    cli_timeout_seconds: float = Field(
+        default=120.0, validation_alias="CLI_TIMEOUT_SECONDS"
+    )
+    cli_max_concurrent: int = Field(default=2, validation_alias="CLI_MAX_CONCURRENT")
+
     # App / RAG
     database_url: str | None = Field(default=None, validation_alias="DATABASE_URL")
     api_key: str | None = Field(default=None, validation_alias="API_KEY")
