@@ -37,4 +37,5 @@ class MessageResponse(BaseModel):
     input_tokens: int
     output_tokens: int
     latency_ms: int
+    tokens_estimated: bool
     created_at: datetime

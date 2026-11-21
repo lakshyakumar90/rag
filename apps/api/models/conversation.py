@@ -3,7 +3,16 @@
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, CheckConstraint, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    false,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -61,6 +70,9 @@ class Message(BaseModel):
     )
     latency_ms: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
+    )
+    tokens_estimated: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
     )
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")
