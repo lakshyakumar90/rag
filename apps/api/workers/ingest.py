@@ -35,6 +35,8 @@ async def _process(
         mime_type = document.mime_type
         document.status = DocumentStatus.PROCESSING
         document.error = None
+        document.chunks_total = 0
+        document.chunks_done = 0
         await session.commit()
 
     data = await storage.download(str(workspace_id), storage_key)
@@ -61,8 +63,17 @@ async def _process(
         await session.execute(
             delete(DocumentChunk).where(DocumentChunk.document_id == document_id)
         )
-        for chunk, vector in zip(chunks, vectors, strict=True):
-            session.add(
+        document.chunks_total = len(chunks)
+        document.chunks_done = 0
+
+        # Batch the inserts but keep them in this single transaction: flush
+        # advances progress without committing until everything succeeded.
+        batch_size = max(1, settings.chunk_insert_batch_size)
+        pairs = list(zip(chunks, vectors, strict=True))
+        sqlite = session.bind is not None and session.bind.dialect.name == "sqlite"
+        for start in range(0, len(pairs), batch_size):
+            batch = pairs[start : start + batch_size]
+            session.add_all(
                 DocumentChunk(
                     document_id=document_id,
                     workspace_id=workspace_id,
@@ -72,8 +83,17 @@ async def _process(
                     heading_path=list(chunk.heading_path) or None,
                     token_count=chunk.token_count,
                     embedding=vector,
+                    # SQLite has no generated tsvector column.
+                    search_vector=" ".join(chunk.text.lower().split())
+                    if sqlite
+                    else None,
                 )
+                for chunk, vector in batch
             )
+            await session.flush()
+            document.chunks_done += len(batch)
+            await session.flush()
+
         document.page_count = result.page_count
         document.embedding_model = settings.ollama_embedding_model
         document.embedding_dim = embeddings.dimension

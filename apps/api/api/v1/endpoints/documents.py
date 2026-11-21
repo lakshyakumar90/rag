@@ -74,6 +74,19 @@ async def document_download_url(
     return await service.download_url(context, document_id)
 
 
+@router.post(
+    "/{workspace_id}/documents/{document_id}/reindex",
+    response_model=DocumentResponse,
+    summary="Delete chunks and re-run ingestion (owner/admin only)",
+)
+async def reindex_document(
+    document_id: uuid.UUID,
+    context: UploaderContext,
+    service: Annotated[DocumentService, Depends(get_document_service)],
+) -> DocumentResponse:
+    return await service.reindex(context, document_id)
+
+
 @router.delete(
     "/{workspace_id}/documents/{document_id}",
     status_code=status.HTTP_204_NO_CONTENT,

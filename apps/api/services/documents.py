@@ -6,12 +6,13 @@ import os
 import uuid
 from typing import Protocol
 
+from sqlalchemy import delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import get_settings
 from core.files import ALLOWED_TYPES, detect_file_type, sanitize_filename
-from models import Document, DocumentStatus
+from models import Document, DocumentChunk, DocumentStatus
 from providers.minio import StorageError
 from providers.queue import JobQueue
 from providers.storage import StorageClient
@@ -141,6 +142,38 @@ class DocumentService:
             raise StorageUnavailableError() from exc
         await self._documents.delete(document, workspace_id)
         await self._session.commit()
+
+    async def reindex(
+        self, context: WorkspaceContext, document_id: uuid.UUID
+    ) -> DocumentResponse:
+        """Drop existing chunks and re-run ingestion for a document."""
+        workspace_id = context.workspace.id
+        document = await self._documents.get(workspace_id, document_id)
+        if document is None:
+            raise DocumentNotFoundError()
+
+        # The DB lookup above is workspace-scoped, so this cannot touch another
+        # tenant's chunks.
+        await self._session.execute(
+            delete(DocumentChunk).where(
+                DocumentChunk.document_id == document_id,
+                DocumentChunk.workspace_id == workspace_id,
+            )
+        )
+        document.status = DocumentStatus.PENDING
+        document.error = None
+        document.chunks_total = 0
+        document.chunks_done = 0
+        await self._session.commit()
+
+        try:
+            await self._queue.enqueue_ingest(document.id)
+        except Exception as exc:
+            logger.error(
+                "could not enqueue re-index for document %s: %s", document.id, exc
+            )
+        await self._session.refresh(document)
+        return DocumentResponse.model_validate(document)
 
     async def download_url(
         self, context: WorkspaceContext, document_id: uuid.UUID
