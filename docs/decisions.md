@@ -573,6 +573,9 @@ Three strategies in `workers/chunking.py`, all returning the same `Chunk`
 - **Endpoints:** conversation create/list/get/delete and message listing under
   `/workspaces/{id}/conversations`; `POST /chat` accepts an optional
   `conversation_id` and echoes it back.
+- **Ordering:** messages have an explicit `sequence` per conversation
+  (migration `a42ce9b566e4`) because `now()` is identical for all rows in one
+  transaction; history and message listings order by sequence, not timestamp.
 - **Tests** (`apps/api/tests/test_conversations.py`): CRUD/isolation, history
   truncation, persisted message metadata, auto title, and follow-up rewriting
   using prior turns. 4 new tests; 143 total pass.
