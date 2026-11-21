@@ -104,6 +104,8 @@ class DocumentChunk(BaseModel):
         index=True,
     )
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    # None for formats without real pages (TXT/MD/DOCX).
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
 
     document: Mapped["Document"] = relationship(back_populates="chunks")
@@ -113,4 +115,8 @@ class DocumentChunk(BaseModel):
             "document_id", "chunk_index", name="uq_document_chunks_doc_index"
         ),
         CheckConstraint("chunk_index >= 0", name="ck_document_chunks_index"),
+        CheckConstraint(
+            "page_number IS NULL OR page_number >= 1",
+            name="ck_document_chunks_page_number",
+        ),
     )
