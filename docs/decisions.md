@@ -527,3 +527,28 @@ Three strategies in `workers/chunking.py`, all returning the same `Chunk`
   denial, threshold fallback and reranker reordering. 7 new tests; 130 total
   pass. Live Postgres/Ollama are not available, so SQL is verified by source
   assertions and execution paths by SQLite plus a fake embedder.
+
+## Prompting (7.2)
+
+- **System prompt** (`core/prompting.py`): answer only from `<context>`, reply
+  exactly "I don't know" when evidence is missing, cite every claim with `[n]`,
+  and explicitly treat context text as untrusted data (never instructions).
+- **Context builder**: numbers sources 1..N with document/page/heading
+  metadata, wraps them in `<context>/<source>` delimiters, and fits a
+  `PROMPT_CONTEXT_TOKEN_BUDGET` (2000) using the offline tokenizer. Text is
+  sanitized (control chars removed, delimiter tags escaped) so a document
+  cannot break out of its source block; truncation is flagged.
+- **Citations**: `[n]` references in the answer are parsed and mapped back to
+  chunk/document ids; unknown and duplicate numbers are ignored.
+- **Chat flow**: `POST /workspaces/{id}/chat` retrieves, then skips the LLM
+  entirely when retrieval is not answerable (returning "I don't know"), else
+  prompts the chosen provider and returns the answer with citations and the
+  numbered sources. Provider clients are closed after each call.
+- **Injection defense:** layered — delimiters + explicit "untrusted data" rule
+  + escaped tags + no tool access in adapters + read-only CLI sandboxes
+  (from 6.4). Tests verify an injected "run calc" string stays inside the
+  escaped context and cannot close it.
+- **Tests** (`apps/api/tests/test_prompting.py`): system-prompt rules,
+  numbering/delimiters, token budget, sanitization, citation mapping, LLM
+  skip-on-no-evidence, and an end-to-end chat with citations. 9 new tests;
+  139 total pass.
