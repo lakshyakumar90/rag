@@ -72,6 +72,15 @@ class Settings(BaseSettings):
         default=True, validation_alias="EMBEDDING_NORMALIZE"
     )
 
+    # LLM providers (chat/rag phase)
+    llm_provider: str = Field(default="ollama", validation_alias="LLM_PROVIDER")
+    ollama_llm_model: str = Field(
+        default="llama3.2:latest", validation_alias="OLLAMA_LLM_MODEL"
+    )
+    llm_timeout_seconds: float = Field(
+        default=120.0, validation_alias="LLM_TIMEOUT_SECONDS"
+    )
+
     # App / RAG
     database_url: str | None = Field(default=None, validation_alias="DATABASE_URL")
     api_key: str | None = Field(default=None, validation_alias="API_KEY")
