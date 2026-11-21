@@ -4,6 +4,7 @@ import uuid
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    JSON,
     CheckConstraint,
     ForeignKey,
     Index,
@@ -11,6 +12,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
@@ -107,6 +109,11 @@ class DocumentChunk(BaseModel):
     # None for formats without real pages (TXT/MD/DOCX).
     page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    # Ordered headings, e.g. ["Guide", "Install"]; null for unheaded formats.
+    heading_path: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    token_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
 
     document: Mapped["Document"] = relationship(back_populates="chunks")
 
@@ -115,6 +122,7 @@ class DocumentChunk(BaseModel):
             "document_id", "chunk_index", name="uq_document_chunks_doc_index"
         ),
         CheckConstraint("chunk_index >= 0", name="ck_document_chunks_index"),
+        CheckConstraint("token_count >= 0", name="ck_document_chunks_tokens"),
         CheckConstraint(
             "page_number IS NULL OR page_number >= 1",
             name="ck_document_chunks_page_number",
