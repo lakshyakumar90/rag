@@ -1,5 +1,6 @@
 from services.auth import AuthService
 from services.chat import ChatService
+from services.conversations import ConversationService
 from services.documents import DocumentService, read_upload
 from services.provider_configs import ProviderConfigService
 from services.retrieval import RetrievalService
@@ -9,6 +10,7 @@ from services.workspaces import WorkspaceService
 __all__ = [
     "AuthService",
     "ChatService",
+    "ConversationService",
     "DocumentService",
     "ProviderConfigService",
     "RetrievalService",

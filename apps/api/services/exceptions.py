@@ -123,6 +123,12 @@ class StorageUnavailableError(DomainError):
     message = "Object storage is unavailable; please try again later"
 
 
+class ConversationNotFoundError(DomainError):
+    status_code = 404
+    code = "CONVERSATION_NOT_FOUND"
+    message = "Conversation not found"
+
+
 class ProviderConfigNotFoundError(DomainError):
     status_code = 404
     code = "PROVIDER_CONFIG_NOT_FOUND"

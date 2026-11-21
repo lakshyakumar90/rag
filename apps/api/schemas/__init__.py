@@ -8,6 +8,11 @@ from schemas.auth import (
 )
 from schemas.chat import ChatRequest, ChatResponse, Citation, SourceRef
 from schemas.cli import CLIStatusResponse, CLIToolStatusResponse
+from schemas.conversation import (
+    ConversationCreate,
+    ConversationResponse,
+    MessageResponse,
+)
 from schemas.document import DocumentPage, DocumentResponse, DownloadUrlResponse
 from schemas.provider_config import (
     ConnectionTestResponse,
@@ -38,6 +43,8 @@ __all__ = [
     "CLIStatusResponse",
     "CLIToolStatusResponse",
     "ConnectionTestResponse",
+    "ConversationCreate",
+    "ConversationResponse",
     "DocumentPage",
     "DocumentResponse",
     "DownloadUrlResponse",
@@ -47,6 +54,7 @@ __all__ = [
     "InvitationResponse",
     "LoginRequest",
     "MemberResponse",
+    "MessageResponse",
     "ProviderConfigCreate",
     "ProviderConfigResponse",
     "ProviderConfigUpdate",

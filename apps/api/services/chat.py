@@ -1,19 +1,40 @@
-"""Grounded RAG answering: retrieve, build context, prompt, map citations."""
+"""Grounded RAG answering with optional conversation history."""
 
+import time
 import uuid
 
 from core.config import get_settings
 from core.prompting import SYSTEM_PROMPT, build_context, parse_citations
+from providers.llm.base import LLMProvider
 from providers.llm.registry import create_llm_provider
 from providers.llm.types import ChatMessage
 from schemas import ChatResponse, Citation, SourceRef
+from services.conversations import ConversationService
 from services.retrieval import RetrievalService
 from services.workspaces import WorkspaceContext
 
 
+def _model_name(provider_name: str) -> str | None:
+    settings = get_settings()
+    if provider_name in ("openai", "openai-compatible"):
+        return settings.openai_model
+    if provider_name == "anthropic":
+        return settings.anthropic_model
+    if provider_name == "ollama":
+        return settings.ollama_llm_model
+    if provider_name.startswith("cli-"):
+        return provider_name
+    return None
+
+
 class ChatService:
-    def __init__(self, retrieval: RetrievalService) -> None:
+    def __init__(
+        self,
+        retrieval: RetrievalService,
+        conversations: ConversationService | None = None,
+    ) -> None:
         self._retrieval = retrieval
+        self._conversations = conversations
 
     async def answer(
         self,
@@ -22,83 +43,176 @@ class ChatService:
         top_k: int | None = None,
         document_ids: list[uuid.UUID] | None = None,
         provider_name: str | None = None,
+        conversation_id: uuid.UUID | None = None,
     ) -> ChatResponse:
         settings = get_settings()
         provider_name = (
             provider_name or settings.chat_default_provider or settings.llm_provider
         )
 
+        conversation = None
+        history = []
+        conversations = self._conversations
+        if conversation_id is not None:
+            if conversations is None:
+                raise RuntimeError("conversation support is not configured")
+            conversation = await conversations.get(context, conversation_id)
+            history = await conversations.messages(context, conversation_id)
+
+        provider: LLMProvider | None = None
+        if conversation is not None:
+            assert conversations is not None
+            provider = create_llm_provider(provider_name)
+            # Follow-ups ("what about the second one?") need a standalone query.
+            effective_query = await conversations.rewrite_query(
+                history, query, provider
+            )
+        else:
+            effective_query = query
+
         search = await self._retrieval.search(
-            context, query, top_k=top_k, document_ids=document_ids
+            context, effective_query, top_k=top_k, document_ids=document_ids
         )
         sources_refs = [
             self._source_ref(item, number)
             for number, item in enumerate(search.items, start=1)
         ]
         if not search.answerable or not search.items:
-            # No evidence: do not call the model, and never invent an answer.
-            return ChatResponse(
-                answer="I don't know",
-                answerable=False,
-                provider=provider_name,
-                citations=[],
-                sources=sources_refs,
-            )
-
-        built = build_context(search.items, settings.prompt_context_token_budget)
-        if not built.sources:
-            return ChatResponse(
-                answer="I don't know",
-                answerable=False,
-                provider=provider_name,
-                citations=[],
-                sources=sources_refs,
-            )
-
-        provider = create_llm_provider(provider_name)
-        try:
-            completion = await provider.complete(
-                [
-                    ChatMessage(role="system", content=SYSTEM_PROMPT),
+            answer_text = "I don't know"
+            citations: list = []
+            sources = sources_refs
+            usage = None
+            latency = 0
+        else:
+            built = build_context(search.items, settings.prompt_context_token_budget)
+            if not built.sources:
+                answer_text = "I don't know"
+                citations, sources, usage, latency = [], sources_refs, None, 0
+            else:
+                messages = [ChatMessage(role="system", content=SYSTEM_PROMPT)]
+                if conversation is not None:
+                    assert conversations is not None
+                    for item in conversations.truncate_history(history):
+                        if item.role in ("user", "assistant"):
+                            messages.append(
+                                ChatMessage(role=item.role, content=item.content)
+                            )
+                messages.append(
                     ChatMessage(
-                        role="user", content=f"Question: {query}\n\n{built.text}"
-                    ),
-                ],
-                max_tokens=settings.chat_max_tokens,
-            )
-        finally:
+                        role="user",
+                        content=f"Question: {effective_query}\n\n{built.text}",
+                    )
+                )
+                if provider is None:
+                    provider = create_llm_provider(provider_name)
+                started = time.monotonic()
+                try:
+                    completion = await provider.complete(
+                        messages, max_tokens=settings.chat_max_tokens
+                    )
+                finally:
+                    latency = int((time.monotonic() - started) * 1000)
+                answer_text = completion.text
+                usage = completion.usage
+                sources = [
+                    SourceRef(
+                        number=source.number,
+                        chunk_id=source.chunk_id,
+                        document_id=source.document_id,
+                        filename=source.filename,
+                        page_number=source.page_number,
+                        heading_path=source.heading_path,
+                    )
+                    for source in built.sources
+                ]
+                citations = [
+                    Citation(
+                        number=citation.number,
+                        chunk_id=citation.chunk_id,
+                        document_id=citation.document_id,
+                        filename=citation.filename,
+                        page_number=citation.page_number,
+                        heading_path=citation.heading_path,
+                    )
+                    for citation in parse_citations(answer_text, built.sources)
+                ]
+
+        new_title: str | None = None
+        if (
+            conversation is not None
+            and conversations is not None
+            and provider is not None
+            and not history
+            and conversation.title == "New conversation"
+        ):
+            new_title = await conversations.generate_title(query, provider)
+
+        if provider is not None:
             close = getattr(provider, "close", None)
             if close:
                 await close()
 
-        citations = parse_citations(completion.text, built.sources)
+        if conversation is not None and conversations is not None:
+            await self._persist(
+                conversations,
+                conversation,
+                query,
+                answer_text,
+                provider_name,
+                citations,
+                usage,
+                latency,
+                new_title,
+            )
+
         return ChatResponse(
-            answer=completion.text,
-            answerable=True,
+            answer=answer_text,
+            answerable=answer_text != "I don't know",
             provider=provider_name,
-            citations=[
-                Citation(
-                    number=citation.number,
-                    chunk_id=citation.chunk_id,
-                    document_id=citation.document_id,
-                    filename=citation.filename,
-                    page_number=citation.page_number,
-                    heading_path=citation.heading_path,
-                )
-                for citation in citations
-            ],
-            sources=[
-                SourceRef(
-                    number=source.number,
-                    chunk_id=source.chunk_id,
-                    document_id=source.document_id,
-                    filename=source.filename,
-                    page_number=source.page_number,
-                    heading_path=source.heading_path,
-                )
-                for source in built.sources
-            ],
+            citations=citations,
+            sources=sources,
+            conversation_id=conversation_id,
         )
+
+    async def _persist(
+        self,
+        conversations: ConversationService,
+        conversation,
+        query: str,
+        answer: str,
+        provider_name: str,
+        citations: list,
+        usage,
+        latency: int,
+        new_title: str | None,
+    ) -> None:
+        model = _model_name(provider_name)
+        input_tokens = usage.input_tokens if usage else 0
+        output_tokens = usage.output_tokens if usage else 0
+        await conversations.add_message(
+            conversation.id, role="user", content=query, commit=False
+        )
+        await conversations.add_message(
+            conversation.id,
+            role="assistant",
+            content=answer,
+            citations=[
+                {
+                    **item.model_dump(),
+                    "chunk_id": str(item.chunk_id),
+                    "document_id": str(item.document_id),
+                }
+                for item in citations
+            ],
+            provider=provider_name,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            latency_ms=latency,
+        )
+        if new_title:
+            conversation.title = new_title
+        await conversations.commit()
 
     @staticmethod
     def _source_ref(item, number: int) -> SourceRef:

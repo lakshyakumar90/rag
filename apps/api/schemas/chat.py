@@ -12,6 +12,7 @@ class ChatRequest(BaseModel):
     top_k: int | None = Field(default=None, ge=1, le=50)
     document_ids: list[uuid.UUID] | None = None
     provider: str | None = Field(default=None, max_length=50)
+    conversation_id: uuid.UUID | None = None
 
 
 class SourceRef(BaseModel):
@@ -33,3 +34,4 @@ class ChatResponse(BaseModel):
     provider: str
     citations: list[Citation]
     sources: list[SourceRef]
+    conversation_id: uuid.UUID | None = None
