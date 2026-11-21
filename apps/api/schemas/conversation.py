@@ -28,6 +28,7 @@ class MessageResponse(BaseModel):
 
     id: uuid.UUID
     conversation_id: uuid.UUID
+    sequence: int
     role: str
     content: str
     citations: list | None

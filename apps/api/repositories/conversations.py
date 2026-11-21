@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import Conversation, Message
@@ -53,11 +53,17 @@ class ConversationRepository:
         result = await self._session.execute(
             select(Message)
             .where(Message.conversation_id == conversation_id)
-            .order_by(Message.created_at, Message.id)
+            .order_by(Message.sequence, Message.id)
         )
         return list(result.scalars().all())
 
     async def add_message(self, message: Message) -> Message:
+        result = await self._session.execute(
+            select(func.count())
+            .select_from(Message)
+            .where(Message.conversation_id == message.conversation_id)
+        )
+        message.sequence = int(result.scalar_one())
         self._session.add(message)
         await self._session.flush()
         return message

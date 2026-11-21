@@ -44,6 +44,10 @@ class Message(BaseModel):
         nullable=False,
         index=True,
     )
+    # Insertion order within a conversation (timestamps can be identical).
+    sequence: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     citations: Mapped[list | None] = mapped_column(JSON, nullable=True)
