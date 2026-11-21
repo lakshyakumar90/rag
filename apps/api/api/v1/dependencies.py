@@ -20,6 +20,7 @@ from providers.rerank import Reranker
 from providers.storage import StorageClient
 from services import (
     AuthService,
+    ChatService,
     DocumentService,
     ProviderConfigService,
     RetrievalService,
@@ -94,6 +95,12 @@ def get_retrieval_service(
     reranker: Annotated[Reranker, Depends(get_reranker)],
 ) -> RetrievalService:
     return RetrievalService(session, embeddings, reranker)
+
+
+def get_chat_service(
+    retrieval: Annotated[RetrievalService, Depends(get_retrieval_service)],
+) -> ChatService:
+    return ChatService(retrieval)
 
 
 async def get_current_user_id(

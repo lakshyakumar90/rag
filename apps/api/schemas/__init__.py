@@ -6,6 +6,7 @@ from schemas.auth import (
     TokenPair,
     TokenResponse,
 )
+from schemas.chat import ChatRequest, ChatResponse, Citation, SourceRef
 from schemas.cli import CLIStatusResponse, CLIToolStatusResponse
 from schemas.document import DocumentPage, DocumentResponse, DownloadUrlResponse
 from schemas.provider_config import (
@@ -31,6 +32,9 @@ from schemas.workspace import (
 
 __all__ = [
     "ChangePasswordRequest",
+    "ChatRequest",
+    "ChatResponse",
+    "Citation",
     "CLIStatusResponse",
     "CLIToolStatusResponse",
     "ConnectionTestResponse",
@@ -51,6 +55,7 @@ __all__ = [
     "SearchRequest",
     "SearchResponse",
     "SearchResult",
+    "SourceRef",
     "RefreshRequest",
     "RegisterRequest",
     "TokenPair",
