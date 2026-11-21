@@ -126,6 +126,17 @@ class Settings(BaseSettings):
     )
     worker_max_jobs: int = Field(default=10, validation_alias="WORKER_MAX_JOBS")
 
+    # Chunking (500 tokens with 50-token overlap by default)
+    chunk_target_tokens: int = Field(
+        default=500, validation_alias="CHUNK_TARGET_TOKENS"
+    )
+    chunk_overlap_tokens: int = Field(
+        default=50, validation_alias="CHUNK_OVERLAP_TOKENS"
+    )
+    chunking_strategy: Literal["auto", "fixed", "paragraph", "heading"] = Field(
+        default="auto", validation_alias="CHUNKING_STRATEGY"
+    )
+
     # CORS (comma-separated origins, e.g. "http://localhost:3000,https://app.example.com")
     cors_origins: str = Field(default="", validation_alias="CORS_ORIGINS")
     cors_allow_credentials: bool = Field(
