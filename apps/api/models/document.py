@@ -62,6 +62,9 @@ class Document(BaseModel):
     )
     error: Mapped[str | None] = mapped_column(String(MAX_ERROR_LENGTH), nullable=True)
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Embedding provenance (global settings for v1).
+    embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    embedding_dim: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     uploader: Mapped["User"] = relationship(back_populates="uploaded_documents")
     workspace: Mapped["Workspace"] = relationship(back_populates="documents")
@@ -114,6 +117,8 @@ class DocumentChunk(BaseModel):
     token_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0")
     )
+    # v1 stores vectors as JSON; a pgvector column/index comes with retrieval.
+    embedding: Mapped[list[float] | None] = mapped_column(JSON, nullable=True)
 
     document: Mapped["Document"] = relationship(back_populates="chunks")
 
