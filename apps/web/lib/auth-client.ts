@@ -2,52 +2,101 @@
  * Browser auth client.
  *
  * The access token lives only in this module's memory (never localStorage, so
- * XSS cannot persist it). The refresh token is set by the API as an HttpOnly,
- * Secure cookie and is never exposed to JavaScript — every request that may
- * need it uses `credentials: "include"`.
+ * XSS cannot persist it). The refresh token stays in an HttpOnly, Secure
+ * cookie set by the API. Every request uses `credentials: "include"` and
+ * retries once after a silent refresh on 401.
  */
 
-const API_BASE =
+export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
-export interface TokenResponse {
+export type TokenResponse = {
   access_token: string;
   token_type: string;
   expires_in: number;
   refresh_expires_in: number;
+};
+
+export type ApiErrorShape = {
+  error?: { code?: string; message?: string; request_id?: string };
+};
+
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+    readonly code?: string,
+    readonly requestId?: string,
+  ) {
+    super(message);
+  }
 }
 
 let accessToken: string | null = null;
+const listeners = new Set<() => void>();
 
 export function getAccessToken(): string | null {
   return accessToken;
 }
 
-export function clearAccessToken(): void {
-  accessToken = null;
+export function setAccessToken(token: string | null): void {
+  accessToken = token;
+  listeners.forEach((listener) => listener());
 }
 
-async function readError(response: Response): Promise<string> {
+export function clearAccessToken(): void {
+  setAccessToken(null);
+}
+
+/** Subscribe to token changes so React state can mirror the in-memory store. */
+export function subscribeAccessToken(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+async function readError(response: Response): Promise<ApiError> {
   try {
-    const body = (await response.json()) as {
-      error?: { message?: string };
-    };
-    return body.error?.message ?? `Request failed (${response.status})`;
+    const body = (await response.json()) as ApiErrorShape;
+    return new ApiError(
+      response.status,
+      body.error?.message ?? `Request failed (${response.status})`,
+      body.error?.code,
+      body.error?.request_id,
+    );
   } catch {
-    return `Request failed (${response.status})`;
+    return new ApiError(response.status, `Request failed (${response.status})`);
   }
 }
 
-export async function login(email: string, password: string): Promise<void> {
+export async function login(email: string, password: string): Promise<TokenResponse> {
   const response = await fetch(`${API_BASE}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify({ email, password }),
   });
-  if (!response.ok) throw new Error(await readError(response));
+  if (!response.ok) throw await readError(response);
   const tokens = (await response.json()) as TokenResponse;
-  accessToken = tokens.access_token;
+  setAccessToken(tokens.access_token);
+  return tokens;
+}
+
+export async function register(
+  email: string,
+  password: string,
+  fullName?: string,
+): Promise<void> {
+  const response = await fetch(`${API_BASE}/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({
+      email,
+      password,
+      ...(fullName ? { full_name: fullName } : {}),
+    }),
+  });
+  if (!response.ok) throw await readError(response);
 }
 
 /** Silent refresh. Returns false when there is no usable session. */
@@ -57,11 +106,11 @@ export async function refresh(): Promise<boolean> {
     credentials: "include",
   });
   if (!response.ok) {
-    accessToken = null;
+    setAccessToken(null);
     return false;
   }
   const tokens = (await response.json()) as TokenResponse;
-  accessToken = tokens.access_token;
+  setAccessToken(tokens.access_token);
   return true;
 }
 
@@ -70,14 +119,11 @@ export async function logout(): Promise<void> {
     method: "POST",
     credentials: "include",
   });
-  accessToken = null;
+  setAccessToken(null);
 }
 
 /** Fetch with the access token attached; retry once after a silent refresh. */
-export async function authFetch(
-  path: string,
-  init: RequestInit = {},
-): Promise<Response> {
+export async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
   const send = (): Promise<Response> =>
     fetch(url, {
@@ -94,4 +140,18 @@ export async function authFetch(
     response = await send();
   }
   return response;
+}
+
+/** Typed convenience wrapper: returns parsed JSON or throws ApiError. */
+export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await authFetch(path, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...init.headers,
+    },
+  });
+  if (!response.ok) throw await readError(response);
+  if (response.status === 204) return undefined as T;
+  return (await response.json()) as T;
 }
