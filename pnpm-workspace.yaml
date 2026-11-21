@@ -1,3 +1,7 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# openapi-typescript 7 uses the TS 5 factory API; the app itself stays on TS 7.
+overrides:
+  "openapi-typescript>typescript": "5.9.3"
