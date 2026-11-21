@@ -176,3 +176,42 @@ def test_invalid_settings_are_rejected() -> None:
         chunk_document(_result("text"), strategy="bogus")
     with pytest.raises(ValueError, match="overlap"):
         chunk_document(_result("text"), target_tokens=10, overlap_tokens=10)
+    with pytest.raises(ValueError, match="overlap"):
+        chunk_document(_result("text"), target_tokens=10, overlap_tokens=-1)
+    with pytest.raises(ValueError, match="target"):
+        chunk_document(_result("text"), target_tokens=0, overlap_tokens=0)
+
+
+def test_empty_and_whitespace_only_documents_produce_no_chunks() -> None:
+    assert chunk_document(_result(""), strategy="fixed") == []
+    assert chunk_document(_result("   \n\n\t "), strategy="paragraph") == []
+    assert chunk_document(_result(""), strategy="heading") == []
+
+
+def test_auto_prefers_heading_only_when_sections_have_headings() -> None:
+    without = ExtractionResult(
+        pages=[ExtractedPage(None, "plain text")],
+        sections=[ExtractedSection(None, (), "plain text")],
+        page_count=None,
+    )
+    with_headings = ExtractionResult(
+        pages=[ExtractedPage(None, "text")],
+        sections=[ExtractedSection(1, ("Title",), "text")],
+        page_count=None,
+    )
+    assert {chunk.heading_path for chunk in chunk_document(without)} == {()}
+    assert {chunk.heading_path for chunk in chunk_document(with_headings)} == {
+        ("Title",)
+    }
+
+
+def test_exact_target_boundary_does_not_create_an_empty_chunk() -> None:
+    tokens = [f"w{i}" for i in range(20)]
+    chunks = chunk_document(
+        _result(" ".join(tokens)),
+        strategy="fixed",
+        target_tokens=20,
+        overlap_tokens=0,
+    )
+    assert len(chunks) == 1
+    assert chunks[0].token_count == 20

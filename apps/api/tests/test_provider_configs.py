@@ -55,6 +55,32 @@ def test_crypto_requires_master_key(monkeypatch) -> None:
         encrypt_secret(SECRET)
 
 
+def test_crypto_rejects_tampering_and_wrong_key(master_key, monkeypatch) -> None:
+    token = encrypt_secret(SECRET)
+    tampered = token[:-2] + ("aa" if token[-2:] != "aa" else "bb")
+    with pytest.raises(EncryptionUnavailableError, match="could not be decrypted"):
+        decrypt_secret(tampered)
+
+    from cryptography.fernet import Fernet
+
+    other_key = Fernet.generate_key().decode()
+    monkeypatch.setattr(get_settings(), "llm_master_key", other_key)
+    with pytest.raises(EncryptionUnavailableError):
+        decrypt_secret(token)
+
+
+def test_crypto_rejects_malformed_master_key(monkeypatch) -> None:
+    monkeypatch.setattr(get_settings(), "llm_master_key", "not-a-fernet-key")
+    with pytest.raises(EncryptionUnavailableError, match="not a valid"):
+        encrypt_secret(SECRET)
+
+
+def test_crypto_handles_empty_and_unicode_values(master_key) -> None:
+    for value in ("", "café-密钥-🔑", "  leading and trailing  "):
+        assert decrypt_secret(encrypt_secret(value)) == value
+    assert key_last4("") == ""
+
+
 def test_base_url_validation(monkeypatch) -> None:
     assert (
         validate_base_url("https://api.example.com/v1/") == "https://api.example.com/v1"

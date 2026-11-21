@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint --max-warnings 0",
     "check-types": "next typegen && tsc --noEmit",
+    "e2e": "playwright test --config e2e/playwright.config.ts",
     "openapi:export": "python ../api/export_openapi.py",
     "api:types": "pnpm openapi:export && openapi-typescript lib/api/openapi.json -o lib/api/schema.d.ts"
   },
@@ -37,6 +38,7 @@
     "tailwind-merge": "^3.7.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.50.0",
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
     "@tailwindcss/postcss": "^4.3.5",

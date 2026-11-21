@@ -137,6 +137,35 @@ def test_rrf_normalizes_and_boosts_overlap() -> None:
     assert all(0 <= score <= 1 for score in scores.values())
 
 
+def test_rrf_handles_empty_and_single_rankings() -> None:
+    assert reciprocal_rank_fusion() == []
+    assert reciprocal_rank_fusion([]) == []
+    only = uuid.uuid4()
+    fused = reciprocal_rank_fusion([_chunk(only, 0.1)])
+    assert [item.chunk_id for item in fused] == [only]
+    assert fused[0].score == pytest.approx(1.0)
+
+
+def test_rrf_k_changes_magnitude_but_not_order() -> None:
+    first, second = uuid.uuid4(), uuid.uuid4()
+    ranking = [_chunk(first, 0.9), _chunk(second, 0.8)]
+    strict = reciprocal_rank_fusion(ranking, k=0)
+    smooth = reciprocal_rank_fusion(ranking, k=60)
+    assert [item.chunk_id for item in strict] == [item.chunk_id for item in smooth]
+    assert strict[1].score == pytest.approx(0.5)
+    assert smooth[1].score == pytest.approx(61 / 62)
+
+
+def test_rrf_keeps_first_metadata_and_clamps_score() -> None:
+    chunk_id = uuid.uuid4()
+    first = ScoredChunk(chunk_id, chunk_id, "first.txt", "a", None, None, 0.9)
+    duplicate = ScoredChunk(chunk_id, chunk_id, "second.txt", "b", None, None, 0.1)
+    fused = reciprocal_rank_fusion([first], [duplicate], max_score=0.5)
+    assert len(fused) == 1
+    assert fused[0].filename == "first.txt"
+    assert fused[0].score == 0.5
+
+
 def test_pg_sql_is_workspace_scoped() -> None:
     source = inspect.getsource(RetrievalRepository)
     assert "workspace_id = :workspace_id" in source

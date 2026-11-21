@@ -5,9 +5,13 @@ list, or modify anything in B through any endpoint, and role checks must hold
 inside A.
 """
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from models import Message
 
 BASE = "/api/v1"
 PASSWORD = "StrongPassw0rd!"
@@ -246,3 +250,120 @@ async def test_unknown_workspace_returns_404(client: AsyncClient) -> None:
     response = await client.get(f"{BASE}/workspaces/{missing}", headers=headers)
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "WORKSPACE_NOT_FOUND"
+
+
+async def test_every_workspace_endpoint_is_tenant_isolated(
+    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Every workspace-scoped route must reject a non-member, including the
+    Phase 9 endpoints, and must never resolve a foreign resource id.
+    """
+    a = await _user(client, "iso-a@example.com")
+    b = await _user(client, "iso-b@example.com")
+    wa = await _workspace(client, a, "Iso A", "iso-a")
+    wb = await _workspace(client, b, "Iso B", "iso-b")
+    wid_a, wid_b = wa["id"], wb["id"]
+    b_member_id = await _member_id(client, b, wid_b, "iso-b@example.com")
+
+    # Real resources owned by B, used as foreign ids below.
+    uploaded = await client.post(
+        f"{BASE}/workspaces/{wid_b}/documents",
+        headers=b,
+        files={"file": ("iso.txt", b"alpha isolation", "text/plain")},
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    doc_b = uploaded.json()["id"]
+    created = await client.post(
+        f"{BASE}/workspaces/{wid_b}/conversations", headers=b, json={"title": "Iso"}
+    )
+    assert created.status_code == 201, created.text
+    conv_b = created.json()["id"]
+    async with session_factory() as session:
+        session.add(
+            Message(
+                conversation_id=UUID(conv_b),
+                sequence=1,
+                role="assistant",
+                content="Grounded answer.",
+            )
+        )
+        await session.commit()
+        msg_b = (
+            (
+                await session.execute(
+                    select(Message).where(Message.conversation_id == UUID(conv_b))
+                )
+            )
+            .scalar_one()
+            .id
+        )
+
+    # (method, path template, json body) for every workspace-scoped route.
+    routes: list[tuple[str, str, dict | None]] = [
+        ("GET", "", None),
+        ("PATCH", "", {"name": "stolen"}),
+        ("DELETE", "", None),
+        ("GET", "/invitations", None),
+        ("POST", "/invitations", {"email": "x@example.com", "role": "member"}),
+        ("GET", "/members", None),
+        ("PATCH", f"/members/{b_member_id}", {"role": "member"}),
+        ("DELETE", f"/members/{b_member_id}", None),
+        ("GET", "/documents", None),
+        ("GET", f"/documents/{doc_b}", None),
+        ("DELETE", f"/documents/{doc_b}", None),
+        ("GET", f"/documents/{doc_b}/url", None),
+        ("POST", f"/documents/{doc_b}/reindex", None),
+        ("GET", "/conversations", None),
+        ("POST", "/conversations", {}),
+        ("GET", f"/conversations/{conv_b}", None),
+        ("PATCH", f"/conversations/{conv_b}", {"title": "stolen"}),
+        ("DELETE", f"/conversations/{conv_b}", None),
+        ("GET", f"/conversations/{conv_b}/messages", None),
+        ("POST", f"/conversations/{conv_b}/stop", None),
+        ("POST", f"/conversations/{conv_b}/regenerate", None),
+        ("POST", "/search", {"query": "alpha"}),
+        ("POST", "/chat", {"query": "alpha"}),
+        ("POST", "/chat/complete", {"query": "alpha"}),
+        ("POST", f"/messages/{msg_b}/feedback", {"vote": "up"}),
+        ("GET", "/usage", None),
+        ("GET", "/usage/analytics", None),
+        ("GET", "/audit-log", None),
+        ("GET", "/export", None),
+    ]
+    for method, suffix, body in routes:
+        response = await client.request(
+            method, f"{BASE}/workspaces/{wid_b}{suffix}", headers=a, json=body
+        )
+        assert response.status_code == 403, (method, suffix, response.text)
+        assert response.json()["error"]["code"] == "NOT_WORKSPACE_MEMBER", (
+            method,
+            suffix,
+            response.text,
+        )
+
+    # Upload is multipart, so it cannot go through the JSON loop above.
+    denied_upload = await client.post(
+        f"{BASE}/workspaces/{wid_b}/documents",
+        headers=a,
+        files={"file": ("foreign.txt", b"foreign", "text/plain")},
+    )
+    assert denied_upload.status_code == 403
+    assert denied_upload.json()["error"]["code"] == "NOT_WORKSPACE_MEMBER"
+
+    # A's own workspace must not resolve B's resource ids.
+    for method, suffix, body in (
+        ("GET", f"/documents/{doc_b}", None),
+        ("GET", f"/conversations/{conv_b}", None),
+        ("POST", f"/messages/{msg_b}/feedback", {"vote": "up"}),
+    ):
+        response = await client.request(
+            method, f"{BASE}/workspaces/{wid_a}{suffix}", headers=a, json=body
+        )
+        assert response.status_code == 404, (method, suffix, response.text)
+
+    # B's workspace and data are unchanged.
+    still_there = await client.get(f"{BASE}/workspaces/{wid_b}", headers=b)
+    assert still_there.status_code == 200
+    assert still_there.json()["name"] == "Iso B"
+    documents = await client.get(f"{BASE}/workspaces/{wid_b}/documents", headers=b)
+    assert [item["id"] for item in documents.json()["items"]] == [doc_b]

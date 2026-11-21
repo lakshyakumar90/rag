@@ -747,3 +747,38 @@ Three strategies in `workers/chunking.py`, all returning the same `Chunk`
   user-owned and was not changed, so an upgrade is left as a follow-up.
   `pip-audit` is not installed in the local environment, so the Python
   dependency audit is documented as not run.
+
+## Tests (10.1)
+
+- **Unit coverage:** the existing unit suites were extended rather than
+  duplicated — chunker edge cases (empty/whitespace input, auto strategy
+  selection, exact window boundaries and invalid settings), RRF (empty/single
+  rankings, effect of `k`, duplicate metadata and score clamping), prompt
+  builder (already covered context budgeting, delimiters, citation mapping and
+  injection neutralization), provider adapters (Ollama NDJSON streaming,
+  payload building, error propagation and registry registration) and encryption
+  (tampering, wrong/malformed keys, empty and unicode values). 47 focused unit
+  tests pass in those modules.
+- **Real Postgres:** `apps/api/tests/test_postgres_integration.py` runs Alembic
+  against a live PostgreSQL database and asserts behavior SQLite cannot
+  reproduce: pgvector distance/tsvector search, generated `search_vector`,
+  `SET NULL` audit foreign keys after account deletion, and feedback uniqueness
+  plus `ON DELETE CASCADE`. It prefers `TEST_DATABASE_URL`, otherwise starts a
+  `pgvector/pgvector:pg16` testcontainer, and skips cleanly when neither is
+  available. `docker-compose.test.yml` provides a ready-to-use database.
+  Declared dev deps: `testcontainers[postgres]` and `asyncpg`. Four tests are
+  collected; they skip locally without Docker.
+- **Tenant isolation:** `test_every_workspace_endpoint_is_tenant_isolated`
+  enumerates all 29 workspace-scoped routes — including documents, chat,
+  conversations, search, feedback, usage, analytics, audit log and export —
+  and asserts a non-member gets 403 on each, that foreign resource ids do not
+  resolve in the caller's workspace (404), and that the other tenant's data is
+  unchanged.
+- **End-to-end:** Playwright specs in `apps/web/e2e` cover signup (including
+  weak-password rejection), upload (reaches `ready` and stays in its workspace)
+  and chat (assistant turn plus feedback submission). They are kept out of the
+  Next.js type-check with a dedicated `e2e/tsconfig.json` and discovered with
+  `pnpm --filter web e2e`; setup and prerequisites are in `e2e/README.md`.
+- **Verification:** ruff, format and mypy clean; `173 passed, 4 skipped`
+  backend tests; `pnpm check-types`, `pnpm lint`, `pnpm build`, the e2e
+  type-check and `playwright test --list` (6 tests) all pass.

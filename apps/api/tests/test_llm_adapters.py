@@ -13,6 +13,7 @@ from providers.llm import (
     ContextLengthError,
     Finish,
     LLMProvider,
+    OllamaLLMProvider,
     OpenAICompatibleLLMProvider,
     ProviderAPIError,
     RateLimitError,
@@ -195,8 +196,57 @@ async def test_anthropic_maps_auth_error() -> None:
         await provider.complete(MESSAGES)
 
 
+async def test_ollama_stream_parses_ndjson_and_builds_payload() -> None:
+    seen: list[dict] = []
+    lines = [
+        {"message": {"content": "Hel"}},
+        {"message": {"content": "lo"}},
+        {
+            "message": {"content": ""},
+            "done": True,
+            "prompt_eval_count": 8,
+            "eval_count": 2,
+            "done_reason": "stop",
+        },
+    ]
+    content = "".join(json.dumps(line) + "\n" for line in lines).encode()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, content=content)
+
+    provider = OllamaLLMProvider(
+        settings=_settings(ollama_llm_model="local-model"),
+        client=_client(handler),
+    )
+    events = [
+        event
+        async for event in provider.stream(MESSAGES, temperature=0.2, max_tokens=9)
+    ]
+    assert [type(event) for event in events] == [TextDelta, TextDelta, Usage, Finish]
+    assert (
+        "".join(event.text for event in events if isinstance(event, TextDelta))
+        == "Hello"
+    )
+    assert events[2].total_tokens == 10
+    assert events[3].reason == "stop"
+    assert seen[0]["model"] == "local-model"
+    assert seen[0]["stream"] is True
+    assert seen[0]["options"] == {"temperature": 0.2, "num_predict": 9}
+
+
+async def test_ollama_complete_raises_on_stream_error() -> None:
+    content = b'{"error":"model not found"}\n'
+    provider = OllamaLLMProvider(
+        client=_client(lambda r: httpx.Response(200, content=content))
+    )
+    with pytest.raises(RuntimeError, match="model not found"):
+        await provider.complete(MESSAGES)
+
+
 def test_registry_builds_all_adapters() -> None:
     for name, expected in (
+        ("ollama", OllamaLLMProvider),
         ("openai", OpenAICompatibleLLMProvider),
         ("openai-compatible", OpenAICompatibleLLMProvider),
         ("anthropic", AnthropicLLMProvider),
