@@ -306,3 +306,33 @@ All routes are under `/api/v1` and require a Bearer access token:
 - **Tests:** PDF page numbers + header/hyphenation cleaning, DOCX/TXT/MD,
   empty and graphics-only PDF rejection, chunk page numbers, worker storing
   chunks, permanent failure without retry. 5 new tests; 57 total pass.
+
+## Chunking (5.3)
+
+Three strategies in `workers/chunking.py`, all returning the same `Chunk`
+(page number, index, text, heading path, token count):
+
+- **V1 `fixed`:** token-sized windows over whitespace units (~500 tokens,
+  50-token overlap) using exact source slices so original text is preserved.
+- **V2 `paragraph`:** paragraph- and sentence-aware packing. Short paragraphs
+  stay intact; long ones are split at sentence boundaries; oversized sentences
+  fall back to V1 windows. Overlap carries a token-sized tail, but is dropped
+  when it would push the next chunk over the target.
+- **V3 `heading`:** same packer, but each section carries a heading path.
+  Markdown ATX headings (`#`/`##`/…) and DOCX `Heading N` styles build a
+  heading stack; paths are stored as JSON on the chunk. `auto` (default)
+  selects `heading` when a document has heading paths, otherwise `paragraph`.
+
+- **Tokenizer:** a deterministic offline regex tokenizer (words/numbers/
+  punctuation count as one, each CJK/emoji code point as one). No model-specific
+  vocabulary or network download; counts are stable and approximate until an
+  embedding stack is chosen.
+- **Schema:** `document_chunks` gains `heading_path` (JSON list, nullable) and
+  `token_count` (integer, default 0, non-negative CHECK) in migration
+  `48342d253c7e`. Chunks still carry document/workspace ids, index, text and
+  page. The worker persists all of these and remains idempotent on reprocessing.
+- **Tests** (`apps/api/tests/test_chunking.py`, plus worker integration):
+  overlap/target sizes, page numbers, paragraph and sentence boundaries,
+  oversized single tokens, tiny files, CJK/unicode, Markdown and DOCX heading
+  paths, invalid settings, and DB persistence of all chunk fields. 13 new unit
+  tests + 1 integration test; 70 total pass.
