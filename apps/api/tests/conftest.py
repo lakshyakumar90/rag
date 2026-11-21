@@ -5,10 +5,12 @@ from collections.abc import AsyncIterator
 
 import pytest
 import pytest_asyncio
+from cryptography.fernet import Fernet
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from api.v1.dependencies import get_job_queue, get_storage_client
+from core.config import get_settings
 from core.database import get_session
 from core.redis import get_redis_client
 from main import app
@@ -41,6 +43,13 @@ class FakeRedis:
 
     async def aclose(self) -> None:
         return None
+
+
+@pytest.fixture
+def master_key(monkeypatch) -> str:
+    key = Fernet.generate_key().decode()
+    monkeypatch.setattr(get_settings(), "llm_master_key", key)
+    return key
 
 
 @pytest_asyncio.fixture
