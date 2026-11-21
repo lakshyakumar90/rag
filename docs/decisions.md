@@ -129,3 +129,48 @@ Added `Workspace`, `Membership`, `Invitation` plus `MembershipRole` /
 - **Tests** (`apps/api/tests/test_models.py`): slug/email normalization, slug
   and membership-pair uniqueness, enum round-trips, CHECK enforcement, default
   status, token-hash uniqueness, and workspace delete cascades.
+
+## Endpoints (3.2)
+
+All routes are under `/api/v1` and require a Bearer access token:
+
+| Route | Who | Purpose |
+|---|---|---|
+| `POST /workspaces` | any user | creates the workspace; creator becomes its **owner** |
+| `GET /workspaces` | member | lists the caller's workspaces |
+| `GET /workspaces/{id}` | member | get one (response includes `my_role`) |
+| `PATCH /workspaces/{id}` | **owner** | update name/slug |
+| `DELETE /workspaces/{id}` | **owner** | delete (cascades members/invitations) |
+| `POST /workspaces/{id}/invitations` | owner or admin | invite by email |
+| `GET /workspaces/{id}/invitations` | member | list invitations (no tokens) |
+| `GET /workspaces/{id}/members` | member | list members |
+| `PATCH /workspaces/{id}/members/{uid}` | **owner** | change a member's role |
+| `DELETE /workspaces/{id}/members/{uid}` | **owner** | remove a member |
+| `POST /invitations/accept` | invited user | accept using the raw token |
+
+- **Invitations without email:** the invite response returns the raw token and
+  an `accept_url` (`INVITATION_ACCEPT_BASE_URL?token=...`) so the UI can display
+  a link; only the SHA-256 token hash is stored. `INVITATION_TTL_DAYS` (7)
+  controls expiry. Re-inviting the same email revokes older pending invites.
+  Accepting checks status, expiry, and that the token's email matches the
+  authenticated user; accepted invites cannot be reused, and an expired one is
+  marked `expired` when encountered.
+- **Last owner:** role changes/removals lock the workspace row (`FOR UPDATE`)
+  and count owners before acting; demoting or removing the sole owner returns
+  409 `LAST_OWNER`. Promoting a second owner first makes those operations legal.
+- **Owner/admininvite:** owners and admins may invite; plain members get 403.
+  Member management (role change/removal) and workspace update/delete are
+  owner-only. These choices are stricter where the spec was silent.
+- **Errors:** 404 unknown workspace/invitation, 403 non-member/owner-only,
+  409 duplicate slug, already-member, reused invitation, or last-owner,
+  410 expired invitation — all through the existing `DomainError` envelope.
+- **Pydantic 2.14 note:** `model_validate(update=...)` no longer exists, so
+  responses with request-specific fields (`my_role`, invite token/link) are
+  constructed explicitly. `updated_at` uses `onupdate=func.now()` and is
+  expired by the flush, so the update method refreshes the row through the
+  async session before serializing (otherwise a sync lazy-load raises
+  `MissingGreenlet`).
+- **Tests** (`apps/api/tests/test_workspaces.py`): creation/ownership, slug
+  uniqueness, member vs non-member access, owner-only update/delete, invite
+  token+link, acceptance (wrong email / reused / expired), member listing,
+  role changes, removal, and last-owner protection — 10 new end-to-end tests.
