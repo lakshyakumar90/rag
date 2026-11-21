@@ -552,3 +552,27 @@ Three strategies in `workers/chunking.py`, all returning the same `Chunk`
   numbering/delimiters, token budget, sanitization, citation mapping, LLM
   skip-on-no-evidence, and an end-to-end chat with citations. 9 new tests;
   139 total pass.
+
+## Conversations (7.3)
+
+- **Models** (migration `f5b27650e65e`): `Conversation(workspace_id, user_id,
+  title)` and `Message(role, content, citations JSON, provider, model,
+  input/output tokens, latency_ms)`. All reads are filtered by workspace and
+  user; non-members get 403 from the workspace dependency, unknown ids 404.
+- **Query rewriting:** for follow-ups with history, a small LLM call rewrites
+  the question into a standalone one before retrieval; failures fall back to
+  the original query. The original text is what gets stored and displayed.
+- **History truncation:** newest messages that fit
+  `CHAT_HISTORY_TOKEN_BUDGET` (1200) are injected between the system prompt and
+  the current question; truncation never drops the newest message.
+- **Auto titles:** first-message conversations with the default title get a
+  short title from the LLM (max six words), with a query-prefix fallback.
+- **Persistence:** the chat endpoint with `conversation_id` stores both the
+  user message and the grounded assistant message (citations serialized with
+  string ids so JSON columns stay portable), including usage and latency.
+- **Endpoints:** conversation create/list/get/delete and message listing under
+  `/workspaces/{id}/conversations`; `POST /chat` accepts an optional
+  `conversation_id` and echoes it back.
+- **Tests** (`apps/api/tests/test_conversations.py`): CRUD/isolation, history
+  truncation, persisted message metadata, auto title, and follow-up rewriting
+  using prior turns. 4 new tests; 143 total pass.
