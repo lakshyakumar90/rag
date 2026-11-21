@@ -12,7 +12,7 @@ from core.database import get_session
 from core.rate_limit import LoginRateLimiter
 from core.redis import get_redis_client
 from models import User
-from services import AuthService, UserService
+from services import AuthService, UserService, WorkspaceService
 from services.exceptions import InvalidAccessTokenError
 
 # auto_error=False so a missing/malformed header produces our own structured
@@ -30,6 +30,12 @@ def get_user_service(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> UserService:
     return UserService(session)
+
+
+def get_workspace_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> WorkspaceService:
+    return WorkspaceService(session)
 
 
 def get_login_rate_limiter(
