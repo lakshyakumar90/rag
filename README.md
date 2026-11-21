@@ -147,6 +147,20 @@ pnpm exec turbo link
 pnpm exec turbo link
 ```
 
+## Web app setup
+
+`apps/web` is a Next.js App Router app with Tailwind, TanStack Query and a
+small shadcn-style component set. Install with `pnpm install`, then run
+`pnpm --filter web dev`.
+
+The typed API client is generated from FastAPI's OpenAPI schema. After any API
+change, run `pnpm --filter web api:types` (uses the Python environment from
+`.venv` to export the schema, then regenerates `lib/api/schema.d.ts`).
+
+The access token is kept in memory and the refresh token is an HttpOnly cookie;
+set `NEXT_PUBLIC_API_BASE_URL` (see `.env.example`) when the API is not at the
+default local address.
+
 ## Local CLI providers (experimental, disabled by default)
 
 The optional `cli-codex`, `cli-opencode` and `cli-claude` providers shell out to

@@ -4,7 +4,7 @@
 
 - **Choice:** `embeddinggemma-2:440m` (served via Ollama)
 - **Purpose:** Text embeddings for the RAG pipeline
-- **Embedding dimension:** _Verify from the model/runtime (e.g., inspect an embedding response or run `ollama show embeddinggemma-2:440m`) and record the confirmed value here._
+- **Embedding dimension:** 768 (verified at runtime via `POST /api/embed` against `embeddinggemma-2:440m`; `ollama show` reports a 512-dim text encoder but the served embedding is 768-dim, so the runtime value is authoritative).
 - **Date:** 2026-11-09
 
 ### Notes
@@ -603,3 +603,28 @@ Three strategies in `workers/chunking.py`, all returning the same `Chunk`
 - **Tests** (`apps/api/tests/test_streaming_chat.py`): event sequence/citations,
   provider usage vs estimation, disconnect persistence, stop helper, regenerate
   and rename. 5 new tests; 148 total pass.
+
+## Frontend Setup (8.1)
+
+- **Stack:** Next.js App Router + TypeScript (already present), Tailwind CSS v4
+  via `@tailwindcss/postcss`, and a local shadcn-style component set
+  (`Button`, `Input`, `Card` built on CVA + `cn()`), plus TanStack Query,
+  next-themes and lucide icons.
+- **Typed API client:** `apps/api/export_openapi.py` dumps FastAPI's OpenAPI
+  document to `apps/web/lib/api/openapi.json`; `pnpm --filter web api:types`
+  regenerates `lib/api/schema.d.ts` with `openapi-typescript`. `lib/api/client.ts`
+  exposes typed operations backed by the generated `components`/`paths` types.
+  openapi-typescript needs the TS 5 factory API, so pnpm overrides its
+  TypeScript to 5.9 while the app stays on TS 7.
+- **Fetch wrapper:** the access token lives only in memory; `authFetch` adds
+  it, sends the HttpOnly refresh cookie, and retries once after `/auth/refresh`
+  on 401. `apiRequest` parses the app's `{ error }` envelope into `ApiError`.
+- **Auth state:** `AuthProvider` mirrors the token store into React, loads the
+  current user with TanStack Query, and exposes login/register/logout
+  mutations. `AuthGuard` redirects unauthenticated users to `/login`; `/` routes
+  to `/dashboard` or `/login`.
+- **Theme:** next-themes with class-based dark mode and Tailwind CSS variables;
+  `ThemeToggle` switches light/dark. Login/register/dashboard pages use the
+  shared primitives.
+- **Verification:** `pnpm check-types`, `pnpm lint` and `pnpm build` all pass
+  (routes `/`, `/login`, `/register`, `/dashboard`).
