@@ -9,6 +9,8 @@
 
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
+/** Origin-only base, for callers that already pass the `/api/v1/...` path. */
+export const API_ORIGIN = API_BASE.replace(/\/api\/v1\/?$/, "");
 
 export type TokenResponse = {
   access_token: string;
@@ -124,7 +126,11 @@ export async function logout(): Promise<void> {
 
 /** Fetch with the access token attached; retry once after a silent refresh. */
 export async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
+  const url = path.startsWith("http")
+    ? path
+    : path.startsWith("/api/")
+      ? `${API_ORIGIN}${path}`
+      : `${API_BASE}${path}`;
   const send = (): Promise<Response> =>
     fetch(url, {
       ...init,
@@ -150,7 +156,11 @@ export function uploadWithProgress<T>(
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
+    const url = path.startsWith("http")
+      ? path
+      : path.startsWith("/api/")
+        ? `${API_ORIGIN}${path}`
+        : `${API_BASE}${path}`;
     xhr.open("POST", url);
     xhr.withCredentials = true;
     if (accessToken) xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
