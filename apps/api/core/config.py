@@ -154,6 +154,9 @@ class Settings(BaseSettings):
     chunking_strategy: Literal["auto", "fixed", "paragraph", "heading"] = Field(
         default="auto", validation_alias="CHUNKING_STRATEGY"
     )
+    chunk_insert_batch_size: int = Field(
+        default=100, validation_alias="CHUNK_INSERT_BATCH_SIZE"
+    )
 
     # CORS (comma-separated origins, e.g. "http://localhost:3000,https://app.example.com")
     cors_origins: str = Field(default="", validation_alias="CORS_ORIGINS")
