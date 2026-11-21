@@ -62,7 +62,7 @@ services:
   minio:
     # MinIO's community images were retired from public registries, so the
     # dev stack uses LocalStack's S3 service. The app still uses the MinIO SDK.
-    image: localstack/localstack:latest
+    image: localstack/localstack:3.8.0
     container_name: rag-minio
     environment:
       SERVICES: s3
@@ -86,7 +86,7 @@ services:
     restart: unless-stopped
 
   minio-create-bucket:
-    image: localstack/localstack:latest
+    image: localstack/localstack:3.8.0
     container_name: rag-minio-create-bucket
     depends_on:
       minio:

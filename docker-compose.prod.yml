@@ -169,7 +169,7 @@ services:
   # LocalStack is used because MinIO's community images were retired from the
   # public registries. Swap in any S3 endpoint by changing MINIO_HOST/PORT.
   minio:
-    image: localstack/localstack:latest
+    image: localstack/localstack:3.8.0
     environment:
       SERVICES: s3
       AWS_DEFAULT_REGION: us-east-1
@@ -190,7 +190,7 @@ services:
     restart: unless-stopped
 
   minio-init:
-    image: localstack/localstack:latest
+    image: localstack/localstack:3.8.0
     depends_on:
       minio:
         condition: service_healthy
