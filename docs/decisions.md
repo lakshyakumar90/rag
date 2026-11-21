@@ -648,3 +648,25 @@ Three strategies in `workers/chunking.py`, all returning the same `Chunk`
 - **Feedback:** sonner toasts, skeleton loaders and empty states across pages.
 - **Verification:** `pnpm check-types`, `pnpm lint` and `pnpm build` pass; build
   emits all workspace pages as dynamic routes.
+
+## Frontend Streaming (8.3)
+
+- **SSE reader:** `lib/chat-stream.ts` consumes the POST response with
+  `response.body.getReader()`, normalizing CRLF, joining multi-line `data:`
+  fields, retaining trailing partial frames between reads and flushing a final
+  unterminated frame at EOF. Malformed JSON becomes an `error` event.
+- **Reconnect:** a bounded retry (one attempt with linear backoff) runs only
+  when the stream fails before any token was emitted; retrying after content
+  would duplicate the assistant message. Aborts are never retried. The backend
+  has no replayable event ids, so reconnects start a fresh generation.
+- **Cancellation:** the chat page owns an `AbortController`, calls `/stop`, and
+  suppresses abort errors; the stream helper checks `signal.aborted` between
+  reads and before retrying.
+- **Document status:** the documents query polls every 1.5s only while any
+  document is `pending`/`processing`, and stops once all settle; progress bars
+  use `chunks_done`/`chunks_total` from the generated `DocumentResponse`.
+- **End-to-end path:** sign up → dashboard → create workspace → Settings → add
+  BYOK provider → Documents → drag-drop upload → wait for `ready` → Chat →
+  streamed answer with citation chips. All steps are wired through the typed
+  client and shared auth/query providers.
+- **Verification:** `pnpm check-types`, `pnpm lint` and `pnpm build` pass.
