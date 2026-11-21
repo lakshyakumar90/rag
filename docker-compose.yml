@@ -13,6 +13,10 @@ x-api-env: &api-env
   # not the host-side POSTGRES_PORT from .env.
   POSTGRES_HOST: postgres
   POSTGRES_PORT: 5432
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+  MINIO_HOST: minio
+  MINIO_PORT: 9000
 
 services:
   postgres:
@@ -133,6 +137,21 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+    restart: unless-stopped
+
+  # Shares the API image; consumes ingest_document jobs from the same Redis.
+  worker:
+    build: *api-build
+    image: rag-api:local
+    environment: *api-env
+    command: ["arq", "workers.settings.WorkerSettings"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
 
 volumes:
