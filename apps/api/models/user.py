@@ -8,6 +8,7 @@ from models.base import BaseModel
 if TYPE_CHECKING:
     from models.document import Document
     from models.membership import Membership
+    from models.provider_config import ProviderConfig
     from models.refresh_token import RefreshToken
     from models.workspace import Workspace
 
@@ -36,6 +37,9 @@ class User(BaseModel):
     # RESTRICT prevents deleting a user who uploaded documents.
     uploaded_documents: Mapped[list["Document"]] = relationship(
         back_populates="uploader", passive_deletes=True
+    )
+    provider_configs: Mapped[list["ProviderConfig"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
     )
 
     __table_args__ = (
