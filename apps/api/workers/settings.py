@@ -6,6 +6,7 @@ from arq.worker import Function
 
 from core.config import get_settings
 from core.database import SessionFactory
+from providers.embeddings import OllamaEmbeddingProvider
 from providers.minio import MinioStorageClient
 from providers.queue import INGEST_JOB
 from workers.ingest import ingest_document
@@ -31,5 +32,9 @@ class WorkerSettings:
     job_timeout = settings.ingest_job_timeout_seconds + 10
     max_tries = settings.ingest_max_tries
     retry_jobs = True
-    # The worker opens its own DB sessions and storage client (no request scope).
-    ctx = {"session_factory": SessionFactory, "storage_client": MinioStorageClient()}
+    # The worker opens its own DB sessions, storage and embedding clients.
+    ctx = {
+        "session_factory": SessionFactory,
+        "storage_client": MinioStorageClient(),
+        "embedding_provider": OllamaEmbeddingProvider(),
+    }

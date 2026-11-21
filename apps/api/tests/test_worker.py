@@ -88,11 +88,12 @@ async def _status(
         return document.status, document.error
 
 
-def _ctx(factory, storage, job_try: int = 1) -> dict:
+def _ctx(factory, storage, embeddings, job_try: int = 1) -> dict:
     return {
         "job_try": job_try,
         "session_factory": factory,
         "storage_client": storage,
+        "embedding_provider": embeddings,
     }
 
 
@@ -149,14 +150,18 @@ async def test_queue_outage_does_not_fail_upload(
 
 
 async def test_ingest_stores_chunks_from_text(
-    session_factory: async_sessionmaker[AsyncSession], fake_storage
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_storage,
+    fake_embedding_provider,
 ) -> None:
     document_id = await _document(
         session_factory,
         storage=fake_storage,
         data=b"First paragraph here.\n\nSecond paragraph follows.",
     )
-    await ingest.ingest_document(_ctx(session_factory, fake_storage), str(document_id))
+    await ingest.ingest_document(
+        _ctx(session_factory, fake_storage, fake_embedding_provider), str(document_id)
+    )
 
     assert (await _status(session_factory, document_id))[0] is DocumentStatus.READY
     async with session_factory() as session:
@@ -174,10 +179,19 @@ async def test_ingest_stores_chunks_from_text(
         assert len(chunks) >= 1
         assert all(chunk.page_number is None for chunk in chunks)
         assert "First paragraph here" in chunks[0].content
+        assert all(
+            len(chunk.embedding) == fake_embedding_provider.dimension
+            for chunk in chunks
+        )
+        assert fake_embedding_provider.calls == [
+            ["First paragraph here. Second paragraph follows."]
+        ]
 
 
 async def test_ingest_persists_heading_path_and_token_count(
-    session_factory: async_sessionmaker[AsyncSession], fake_storage
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_storage,
+    fake_embedding_provider,
 ) -> None:
     markdown = (
         b"# Guide\n\nIntroduction with enough text to keep.\n\n"
@@ -189,7 +203,9 @@ async def test_ingest_persists_heading_path_and_token_count(
         mime_type="text/markdown",
         data=markdown,
     )
-    await ingest.ingest_document(_ctx(session_factory, fake_storage), str(document_id))
+    await ingest.ingest_document(
+        _ctx(session_factory, fake_storage, fake_embedding_provider), str(document_id)
+    )
 
     async with session_factory() as session:
         chunks = (
@@ -215,9 +231,12 @@ async def test_ingest_persists_heading_path_and_token_count(
 
 
 async def test_ingest_retries_with_exponential_backoff(
-    session_factory: async_sessionmaker[AsyncSession], fake_storage, monkeypatch
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_storage,
+    fake_embedding_provider,
+    monkeypatch,
 ) -> None:
-    async def _fails(document_id, factory, storage):
+    async def _fails(document_id, factory, storage, embeddings):
         raise RuntimeError("transient")
 
     monkeypatch.setattr(ingest, "_process", _fails)
@@ -225,7 +244,8 @@ async def test_ingest_retries_with_exponential_backoff(
 
     with pytest.raises(Retry) as retry:
         await ingest.ingest_document(
-            _ctx(session_factory, fake_storage, 1), str(document_id)
+            _ctx(session_factory, fake_storage, fake_embedding_provider, 1),
+            str(document_id),
         )
     base = get_settings().ingest_retry_backoff_seconds
     assert retry.value.defer_score == int(base * 1000)
@@ -233,15 +253,19 @@ async def test_ingest_retries_with_exponential_backoff(
 
     with pytest.raises(Retry) as second:
         await ingest.ingest_document(
-            _ctx(session_factory, fake_storage, 2), str(document_id)
+            _ctx(session_factory, fake_storage, fake_embedding_provider, 2),
+            str(document_id),
         )
     assert second.value.defer_score == int(base * 2 * 1000)
 
 
 async def test_ingest_records_failure_on_last_attempt(
-    session_factory: async_sessionmaker[AsyncSession], fake_storage, monkeypatch
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_storage,
+    fake_embedding_provider,
+    monkeypatch,
 ) -> None:
-    async def _fails(document_id, factory, storage):
+    async def _fails(document_id, factory, storage, embeddings):
         raise RuntimeError("permanent failure")
 
     monkeypatch.setattr(ingest, "_process", _fails)
@@ -249,7 +273,12 @@ async def test_ingest_records_failure_on_last_attempt(
 
     with pytest.raises(RuntimeError, match="permanent failure"):
         await ingest.ingest_document(
-            _ctx(session_factory, fake_storage, get_settings().ingest_max_tries),
+            _ctx(
+                session_factory,
+                fake_storage,
+                fake_embedding_provider,
+                get_settings().ingest_max_tries,
+            ),
             str(document_id),
         )
 
@@ -259,9 +288,12 @@ async def test_ingest_records_failure_on_last_attempt(
 
 
 async def test_ingest_timeout_recorded_as_failure(
-    session_factory: async_sessionmaker[AsyncSession], fake_storage, monkeypatch
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_storage,
+    fake_embedding_provider,
+    monkeypatch,
 ) -> None:
-    async def _slow(document_id, factory, storage):
+    async def _slow(document_id, factory, storage, embeddings):
         await asyncio.sleep(5)
 
     monkeypatch.setattr(ingest, "_process", _slow)
@@ -270,7 +302,12 @@ async def test_ingest_timeout_recorded_as_failure(
 
     with pytest.raises(asyncio.TimeoutError):
         await ingest.ingest_document(
-            _ctx(session_factory, fake_storage, get_settings().ingest_max_tries),
+            _ctx(
+                session_factory,
+                fake_storage,
+                fake_embedding_provider,
+                get_settings().ingest_max_tries,
+            ),
             str(document_id),
         )
 
@@ -327,7 +364,9 @@ def test_empty_and_scanned_pdfs_are_rejected() -> None:
 
 
 async def test_empty_pdf_fails_immediately_without_retry(
-    session_factory: async_sessionmaker[AsyncSession], fake_storage
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_storage,
+    fake_embedding_provider,
 ) -> None:
     document_id = await _document(
         session_factory,
@@ -337,7 +376,8 @@ async def test_empty_pdf_fails_immediately_without_retry(
     )
     with pytest.raises(EmptyDocumentError):
         await ingest.ingest_document(
-            _ctx(session_factory, fake_storage, 1), str(document_id)
+            _ctx(session_factory, fake_storage, fake_embedding_provider, 1),
+            str(document_id),
         )
 
     status, error = await _status(session_factory, document_id)
@@ -358,3 +398,4 @@ def test_worker_settings_configured() -> None:
     assert WorkerSettings.retry_jobs is True
     assert "session_factory" in WorkerSettings.ctx
     assert "storage_client" in WorkerSettings.ctx
+    assert "embedding_provider" in WorkerSettings.ctx

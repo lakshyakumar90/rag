@@ -97,6 +97,28 @@ def fake_job_queue() -> FakeJobQueue:
     return FakeJobQueue()
 
 
+class FakeEmbeddingProvider:
+    """Deterministic vectors without calling Ollama."""
+
+    def __init__(self, dimension: int = 8) -> None:
+        self.dimension = dimension
+        self.calls: list[list[str]] = []
+
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        self.calls.append(list(texts))
+        return [
+            [float(len(text) % 7 + 1)] + [0.0] * (self.dimension - 1) for text in texts
+        ]
+
+    async def embed_query(self, text: str) -> list[float]:
+        return (await self.embed_documents([text]))[0]
+
+
+@pytest.fixture
+def fake_embedding_provider() -> FakeEmbeddingProvider:
+    return FakeEmbeddingProvider()
+
+
 @pytest_asyncio.fixture
 async def session_factory() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")

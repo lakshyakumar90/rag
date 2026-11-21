@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.config import get_settings
 from models import Document, DocumentChunk, DocumentStatus
+from providers.embeddings import EmbeddingProvider
 from providers.storage import StorageClient
 from workers.chunking import chunk_document
 from workers.extraction import ExtractionError, extract
@@ -21,8 +22,9 @@ async def _process(
     document_id: uuid.UUID,
     factory: async_sessionmaker[AsyncSession],
     storage: StorageClient,
+    embeddings: EmbeddingProvider,
 ) -> None:
-    """Download, extract, clean and chunk one document, then mark it ready."""
+    """Download, extract, chunk, embed and persist one document."""
     async with factory() as session:
         document = await session.get(Document, document_id)
         if document is None:
@@ -45,6 +47,11 @@ async def _process(
         settings.chunk_target_tokens,
         settings.chunk_overlap_tokens,
     )
+    vectors = (
+        await embeddings.embed_documents([chunk.text for chunk in chunks])
+        if chunks
+        else []
+    )
 
     async with factory() as session:
         document = await session.get(Document, document_id)
@@ -54,7 +61,7 @@ async def _process(
         await session.execute(
             delete(DocumentChunk).where(DocumentChunk.document_id == document_id)
         )
-        for chunk in chunks:
+        for chunk, vector in zip(chunks, vectors, strict=True):
             session.add(
                 DocumentChunk(
                     document_id=document_id,
@@ -64,9 +71,12 @@ async def _process(
                     content=chunk.text,
                     heading_path=list(chunk.heading_path) or None,
                     token_count=chunk.token_count,
+                    embedding=vector,
                 )
             )
         document.page_count = result.page_count
+        document.embedding_model = settings.ollama_embedding_model
+        document.embedding_dim = embeddings.dimension
         document.status = DocumentStatus.READY
         await session.commit()
 
@@ -91,6 +101,7 @@ async def ingest_document(ctx: dict, document_id: str) -> None:
     settings = get_settings()
     factory: async_sessionmaker[AsyncSession] = ctx["session_factory"]
     storage: StorageClient = ctx["storage_client"]
+    embeddings: EmbeddingProvider = ctx["embedding_provider"]
     doc_id = uuid.UUID(document_id)
     attempt = int(ctx.get("job_try", 1))
 
@@ -99,7 +110,7 @@ async def ingest_document(ctx: dict, document_id: str) -> None:
         # logic (ARQ's own timeout raises CancelledError, which is not an
         # Exception and would bypass this handler).
         await asyncio.wait_for(
-            _process(doc_id, factory, storage),
+            _process(doc_id, factory, storage, embeddings),
             timeout=settings.ingest_job_timeout_seconds,
         )
     except Exception as exc:
