@@ -14,6 +14,7 @@ from core.rate_limit import LoginRateLimiter
 from core.redis import get_redis_client
 from models import MembershipRole, User
 from providers.minio import MinioStorageClient
+from providers.queue import ArqJobQueue, JobQueue, get_arq_pool
 from providers.storage import StorageClient
 from services import AuthService, DocumentService, UserService, WorkspaceService
 from services.exceptions import (
@@ -56,11 +57,16 @@ def get_storage_client() -> StorageClient:
     return MinioStorageClient()
 
 
+def get_job_queue() -> JobQueue:
+    return ArqJobQueue(get_arq_pool())
+
+
 def get_document_service(
     session: Annotated[AsyncSession, Depends(get_session)],
     storage: Annotated[StorageClient, Depends(get_storage_client)],
+    queue: Annotated[JobQueue, Depends(get_job_queue)],
 ) -> DocumentService:
-    return DocumentService(session, storage)
+    return DocumentService(session, storage, queue)
 
 
 async def get_current_user_id(

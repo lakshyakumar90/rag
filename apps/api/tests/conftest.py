@@ -1,5 +1,6 @@
 """Test fixtures: SQLite database, fake Redis/object storage, ASGI client."""
 
+import uuid
 from collections.abc import AsyncIterator
 
 import pytest
@@ -7,7 +8,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from api.v1.dependencies import get_storage_client
+from api.v1.dependencies import get_job_queue, get_storage_client
 from core.database import get_session
 from core.redis import get_redis_client
 from main import app
@@ -77,6 +78,25 @@ def fake_storage() -> FakeStorage:
     return FakeStorage()
 
 
+class FakeJobQueue:
+    """Records enqueued ingest jobs without needing Redis."""
+
+    def __init__(self) -> None:
+        self.jobs: list[uuid.UUID] = []
+        self.fail = False
+
+    async def enqueue_ingest(self, document_id: uuid.UUID) -> str | None:
+        if self.fail:
+            raise RuntimeError("queue is down")
+        self.jobs.append(document_id)
+        return f"job-{len(self.jobs)}"
+
+
+@pytest.fixture
+def fake_job_queue() -> FakeJobQueue:
+    return FakeJobQueue()
+
+
 @pytest_asyncio.fixture
 async def session_factory() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -94,6 +114,7 @@ async def client(
     session_factory: async_sessionmaker[AsyncSession],
     fake_redis: FakeRedis,
     fake_storage: FakeStorage,
+    fake_job_queue: FakeJobQueue,
 ) -> AsyncIterator[AsyncClient]:
     async def override_get_session() -> AsyncIterator[AsyncSession]:
         async with session_factory() as session:
@@ -102,6 +123,7 @@ async def client(
     app.dependency_overrides[get_session] = override_get_session
     app.dependency_overrides[get_redis_client] = lambda: fake_redis
     app.dependency_overrides[get_storage_client] = lambda: fake_storage
+    app.dependency_overrides[get_job_queue] = lambda: fake_job_queue
     try:
         # https so Secure cookies are stored and sent back by httpx's jar.
         async with AsyncClient(

@@ -89,7 +89,7 @@ async def test_upload_list_get_and_delete(client: AsyncClient, fake_storage) -> 
     assert doc["mime_type"] == "application/pdf"
     assert doc["size"] == len(PDF)
     assert len(doc["sha256"]) == 64
-    assert doc["status"] == "ready"
+    assert doc["status"] == "pending"  # the worker will process it
     assert doc["page_count"] is None
 
     # Stored under workspace_id/uuid, never under the client-supplied name.
@@ -148,7 +148,7 @@ async def test_pagination_and_status_filter(client: AsyncClient) -> None:
     filtered = await client.get(
         f"{BASE}/workspaces/{wid}/documents",
         headers=owner,
-        params={"status": "ready"},
+        params={"status": "pending"},
     )
     assert filtered.json()["total"] == 3
     none = await client.get(

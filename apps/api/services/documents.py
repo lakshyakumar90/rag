@@ -1,6 +1,7 @@
 """Document upload/listing/deletion business logic."""
 
 import hashlib
+import logging
 import os
 import uuid
 from typing import Protocol
@@ -12,6 +13,7 @@ from core.config import get_settings
 from core.files import ALLOWED_TYPES, detect_file_type, sanitize_filename
 from models import Document, DocumentStatus
 from providers.minio import StorageError
+from providers.queue import JobQueue
 from providers.storage import StorageClient
 from repositories import DocumentRepository
 from schemas import DocumentPage, DocumentResponse, DownloadUrlResponse
@@ -25,12 +27,19 @@ from services.exceptions import (
 from services.workspaces import WorkspaceContext
 
 _READ_CHUNK = 1024 * 1024
+logger = logging.getLogger(__name__)
 
 
 class DocumentService:
-    def __init__(self, session: AsyncSession, storage: StorageClient) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        storage: StorageClient,
+        queue: JobQueue,
+    ) -> None:
         self._session = session
         self._storage = storage
+        self._queue = queue
         self._documents = DocumentRepository(session)
 
     async def upload(
@@ -76,14 +85,24 @@ class DocumentService:
             await self._session.commit()
             raise StorageUnavailableError() from exc
 
-        # No ingestion worker yet: a stored file is immediately "ready".
-        # The processing pipeline will move it through processing/ready later.
-        document.status = DocumentStatus.READY
+        # The row stays pending: the ARQ worker moves it through
+        # processing/ready (and records failures).
         try:
             await self._session.commit()
         except IntegrityError as exc:
             await self._session.rollback()
             raise DuplicateDocumentError(document.id) from exc
+
+        # Enqueue after commit so the worker never sees a missing row. A queue
+        # outage leaves the document pending for a later recovery sweep; it does
+        # not undo a successfully stored file.
+        try:
+            await self._queue.enqueue_ingest(document.id)
+        except Exception as exc:
+            logger.error(
+                "could not enqueue ingestion for document %s: %s", document.id, exc
+            )
+
         # updated_at has onupdate=func.now() and is expired by the flush.
         await self._session.refresh(document)
         return DocumentResponse.model_validate(document)
