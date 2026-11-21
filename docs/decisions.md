@@ -579,3 +579,27 @@ Three strategies in `workers/chunking.py`, all returning the same `Chunk`
 - **Tests** (`apps/api/tests/test_conversations.py`): CRUD/isolation, history
   truncation, persisted message metadata, auto title, and follow-up rewriting
   using prior turns. 4 new tests; 143 total pass.
+
+## Chat Endpoint (7.4)
+
+- **SSE:** `POST /workspaces/{id}/chat` now streams `data:` frames with event
+  types `sources`, `token`, `done` and `error`. The previous JSON behavior is
+  preserved at `POST /chat/complete` (same pipeline, non-streaming).
+- **Persistence:** the streaming generator persists the user message and the
+  assistant message in a `finally` block, so partial answers are saved on client
+  disconnect or cancellation; a `done` frame is suppressed on disconnect.
+- **Stop:** `POST /conversations/{id}/stop` cancels the active generation task
+  via an in-process registry keyed by conversation id. This works for a single
+  API process; multi-worker deployments would need shared state (documented
+  limitation).
+- **Regenerate:** `POST /conversations/{id}/regenerate` deletes the last
+  user/assistant turn and generates a fresh answer, keeping the conversation
+  length unchanged.
+- **Conversation management:** PATCH rename added alongside the existing list
+  and delete endpoints.
+- **Usage tracking:** provider token usage is stored when available; otherwise
+  tokens are estimated with the offline tokenizer and `tokens_estimated=true`
+  is persisted on the message (migration `aa7a9853ef45`) and reported in `done`.
+- **Tests** (`apps/api/tests/test_streaming_chat.py`): event sequence/citations,
+  provider usage vs estimation, disconnect persistence, stop helper, regenerate
+  and rename. 5 new tests; 148 total pass.
