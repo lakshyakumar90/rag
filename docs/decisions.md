@@ -500,3 +500,30 @@ Three strategies in `workers/chunking.py`, all returning the same `Chunk`
   container guard, argv safety for all three, structured parsers, identical
   streamed text from all three formats, timeout cleanup, injection resistance
   and status endpoint. 15 new tests; 123 total pass.
+
+## Retrieval (7.1)
+
+- **Vector search:** parameterised SQL with `1 - (embedding <=> :vector)` as
+  cosine score, filtered by `workspace_id`, ready documents, non-null vectors
+  and optional document ids, ordered by distance with a bound top-k. SQLite
+  tests fall back to Python cosine over the JSON vectors.
+- **Keyword search:** `websearch_to_tsquery('english', :query)` +
+  `ts_rank_cd` against the generated `search_vector`, with the same workspace
+  and document filters; SQLite falls back to token overlap. Non-positive
+  scores are dropped so a zero vector never becomes a "match".
+- **Fusion:** `reciprocal_rank_fusion` uses `1/(k + rank)` (k=60) and
+  normalizes by the best achievable single-list rank-1 score, so the
+  configured threshold is meaningful. Overlapping hits accumulate score.
+- **Reranking:** optional `Reranker` calls a TEI-compatible `/rerank`
+  endpoint; disabled by default and failures fall back to fused order.
+- **Threshold:** best score below `RETRIEVAL_SCORE_THRESHOLD` (0.15) returns
+  `answerable=False` and `answer="I don't know"`; metadata items are still
+  returned so callers can inspect why.
+- **Endpoint:** `POST /workspaces/{id}/search` (any member), with optional
+  `top_k` and `document_ids`. Document filters and workspace scoping are both
+  enforced in the repository, so cross-tenant ids simply return no rows.
+- **Tests** (`apps/api/tests/test_retrieval.py`): RRF unit tests, PG SQL
+  assertions, hybrid/keyword-only matches, document filters, cross-tenant
+  denial, threshold fallback and reranker reordering. 7 new tests; 130 total
+  pass. Live Postgres/Ollama are not available, so SQL is verified by source
+  assertions and execution paths by SQLite plus a fake embedder.
