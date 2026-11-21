@@ -2,11 +2,20 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CheckCircle2, KeyRound, Trash2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../../../../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../../../../components/ui/card";
 import { Input } from "../../../../components/ui/input";
-import { Skeleton } from "../../../../components/ui/skeleton";
+import { Badge } from "../../../../components/ui/badge";
+import { RowSkeleton } from "../../../../components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../../components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../../../components/ui/select";
 import { api } from "../../../../lib/api/client";
 import { useAuth } from "../../../../lib/auth/auth-provider";
 
@@ -20,14 +29,18 @@ export default function SettingsPage() {
   const [baseUrl, setBaseUrl] = useState("");
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [testResults, setTestResults] = useState<Record<string, boolean>>({});
 
   const configs = useQuery({ queryKey: ["provider-configs"], queryFn: api.providerConfigs });
   const cli = useQuery({ queryKey: ["cli-status"], queryFn: api.cliStatus });
 
   const saveProfile = useMutation({
     mutationFn: () => api.updateMe(fullName || null),
-    onSuccess: () => { toast.success("Profile saved"); queryClient.invalidateQueries({ queryKey: ["me"] }); },
-    onError: () => toast.error("Could not save profile"),
+    onSuccess: () => {
+      toast.success("Profile saved");
+      queryClient.invalidateQueries({ queryKey: ["me"] });
+    },
+    onError: () => toast.error("Could not save the profile"),
   });
   const addConfig = useMutation({
     mutationFn: () =>
@@ -42,13 +55,20 @@ export default function SettingsPage() {
       toast.success("Provider saved");
       queryClient.invalidateQueries({ queryKey: ["provider-configs"] });
     },
-    onError: () => toast.error("Could not save provider"),
+    onError: () => toast.error("Could not save the provider"),
   });
   const testConfig = useMutation({
     mutationFn: (id: string) => api.testProviderConfig(id),
-    onSuccess: (result) =>
-      result.ok ? toast.success("Connection successful") : toast.error("Connection failed"),
-    onError: () => toast.error("Connection test failed"),
+    onSuccess: (result, id) => {
+      setTestResults((current) => ({ ...current, [id]: result.ok }));
+      toast[result.ok ? "success" : "error"](
+        result.ok ? "Connection successful" : "Connection failed",
+      );
+    },
+    onError: (_error, id) => {
+      setTestResults((current) => ({ ...current, [id]: false }));
+      toast.error("Connection test failed");
+    },
   });
   const deleteConfig = useMutation({
     mutationFn: (id: string) => api.deleteProviderConfig(id),
@@ -56,77 +76,169 @@ export default function SettingsPage() {
   });
 
   return (
-    <div className="flex flex-col gap-6">
-      <Card>
-        <CardHeader><CardTitle>Profile</CardTitle></CardHeader>
-        <CardContent>
-          <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); saveProfile.mutate(); }}>
+    <Tabs defaultValue="profile">
+      <TabsList className="mb-6">
+        <TabsTrigger value="profile">Profile</TabsTrigger>
+        <TabsTrigger value="providers">AI providers</TabsTrigger>
+        <TabsTrigger value="cli">Local CLI</TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="profile">
+        <section className="max-w-xl">
+          <h2 className="text-[14px] font-semibold">Your profile</h2>
+          <p className="mt-1 text-[12px] text-muted-foreground">{user?.email}</p>
+          <form
+            className="mt-5 flex flex-col gap-2 sm:flex-row"
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveProfile.mutate();
+            }}
+          >
             <Input
-              value={fullName}
+              aria-label="Full name"
               placeholder="Full name"
+              value={fullName}
               onChange={(event) => setFullName(event.target.value)}
             />
             <Button type="submit">Save</Button>
           </form>
-          <p className="mt-2 text-sm text-muted-foreground">{user?.email}</p>
-        </CardContent>
-      </Card>
+        </section>
+      </TabsContent>
 
-      <Card>
-        <CardHeader><CardTitle>AI providers (bring your own key)</CardTitle></CardHeader>
-        <CardContent>
+      <TabsContent value="providers">
+        <section>
+          <div className="flex items-center gap-2">
+            <KeyRound size={15} className="text-muted-foreground" />
+            <h2 className="text-[14px] font-semibold">Bring your own key</h2>
+          </div>
+          <p className="mt-1 text-[12px] text-muted-foreground">
+            Keys are encrypted at rest and never shown again after saving.
+          </p>
           <form
-            className="flex flex-wrap gap-2"
-            onSubmit={(event) => { event.preventDefault(); addConfig.mutate(); }}
+            className="mt-5 flex flex-col gap-2 lg:flex-row"
+            onSubmit={(event) => {
+              event.preventDefault();
+              addConfig.mutate();
+            }}
           >
-            <select
-              className="rounded-md border border-border bg-card px-3 text-sm"
+            <Select
               value={providerType}
-              onChange={(event) => setProviderType(event.target.value as (typeof PROVIDER_TYPES)[number])}
+              onValueChange={(value) => setProviderType(value as (typeof PROVIDER_TYPES)[number])}
             >
-              {PROVIDER_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
-            </select>
-            <Input placeholder="Base URL (optional)" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
-            <Input placeholder="Model (optional)" value={model} onChange={(e) => setModel(e.target.value)} />
-            <Input type="password" placeholder="API key" value={apiKey} onChange={(e) => setApiKey(e.target.value)} required />
-            <Button type="submit">Add provider</Button>
+              <SelectTrigger aria-label="Provider type" className="lg:w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PROVIDER_TYPES.map((type) => (
+                  <SelectItem key={type} value={type}>
+                    {type}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              aria-label="Base URL"
+              placeholder="Base URL (optional)"
+              value={baseUrl}
+              onChange={(event) => setBaseUrl(event.target.value)}
+            />
+            <Input
+              aria-label="Model"
+              placeholder="Model (optional)"
+              value={model}
+              onChange={(event) => setModel(event.target.value)}
+            />
+            <Input
+              aria-label="API key"
+              type="password"
+              placeholder="API key"
+              value={apiKey}
+              onChange={(event) => setApiKey(event.target.value)}
+              required
+            />
+            <Button type="submit">Add</Button>
           </form>
-          {configs.isLoading ? <Skeleton className="mt-4 h-16 w-full" /> : null}
-          <div className="mt-4 flex flex-col gap-2">
+
+          <div className="mt-6 border-t border-border">
+            {configs.isLoading ? <RowSkeleton lines={1} /> : null}
+            {!configs.isLoading && !configs.data?.length ? (
+              <p className="py-10 text-[13px] text-muted-foreground">
+                No provider configured yet. Chat uses the server default until you add one.
+              </p>
+            ) : null}
             {configs.data?.map((config) => (
-              <div key={config.id} className="flex flex-wrap items-center gap-3 rounded border border-border p-3 text-sm">
+              <div
+                key={config.id}
+                className="flex flex-wrap items-center gap-3 border-b border-border px-2 py-3 text-[12px]"
+              >
                 <span className="font-medium">{config.provider_type}</span>
-                <span className="text-muted-foreground">{config.model ?? "default model"} · ••••{config.key_last4}</span>
-                <Button variant="outline" size="sm" onClick={() => testConfig.mutate(config.id)}>Test</Button>
-                <Button variant="destructive" size="sm" onClick={() => deleteConfig.mutate(config.id)}>Delete</Button>
+                <span className="font-mono text-[11px] text-muted-foreground">
+                  {config.model ?? "default"} · ••••{config.key_last4}
+                </span>
+                {config.id in testResults ? (
+                  testResults[config.id] ? (
+                    <CheckCircle2 size={14} className="text-foreground" />
+                  ) : (
+                    <XCircle size={14} className="text-muted-foreground" />
+                  )
+                ) : null}
+                <div className="ml-auto flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={testConfig.isPending}
+                    onClick={() => testConfig.mutate(config.id)}
+                  >
+                    Test
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Delete provider"
+                    onClick={() => deleteConfig.mutate(config.id)}
+                  >
+                    <Trash2 size={14} className="text-destructive" />
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
-        </CardContent>
-      </Card>
+        </section>
+      </TabsContent>
 
-      <Card>
-        <CardHeader><CardTitle>Local CLI providers</CardTitle></CardHeader>
-        <CardContent>
-          {cli.isLoading ? <Skeleton className="h-12 w-full" /> : null}
-          {cli.data?.enabled === false ? (
-            <p className="text-sm text-muted-foreground">
-              Disabled by default. Set ENABLE_CLI_PROVIDERS=true and run the backend on the host.
-              {cli.data.in_container ? " The backend is running in a container." : ""}
-            </p>
+      <TabsContent value="cli">
+        <section className="max-w-xl">
+          <h2 className="text-[14px] font-semibold">Local CLI providers</h2>
+          <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+            Off by default. Enable with <code className="font-mono">ENABLE_CLI_PROVIDERS=true</code>{" "}
+            and run the backend on the host — the CLI binaries and logins are not available in Docker.
+          </p>
+          {cli.isLoading ? <RowSkeleton lines={1} /> : null}
+          {cli.data ? (
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              <Badge tone="neutral">{cli.data.enabled ? "enabled" : "disabled"}</Badge>
+              {cli.data.in_container ? <Badge tone="neutral">in container</Badge> : null}
+            </div>
           ) : null}
-          <div className="flex flex-col gap-2">
+          <div className="mt-4 border-t border-border">
             {Object.entries(cli.data?.tools ?? {}).map(([name, status]) => (
-              <div key={name} className="flex justify-between text-sm">
-                <span>{name}</span>
-                <span className={status.logged_in ? "text-emerald-600" : "text-muted-foreground"}>
-                  {status.installed ? (status.logged_in ? "installed · logged in" : "installed · not logged in") : "not installed"}
+              <div
+                key={name}
+                className="flex items-center gap-3 border-b border-border px-2 py-3 text-[12px]"
+              >
+                <span className="font-mono">{name}</span>
+                <span className="ml-auto text-muted-foreground">
+                  {status.installed
+                    ? status.logged_in
+                      ? "installed · logged in"
+                      : "installed · not logged in"
+                    : "not installed"}
                 </span>
               </div>
             ))}
           </div>
-        </CardContent>
-      </Card>
-    </div>
+        </section>
+      </TabsContent>
+    </Tabs>
   );
 }
