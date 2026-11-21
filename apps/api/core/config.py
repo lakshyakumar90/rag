@@ -137,6 +137,15 @@ class Settings(BaseSettings):
     chat_default_provider: str | None = Field(
         default=None, validation_alias="CHAT_DEFAULT_PROVIDER"
     )
+    chat_history_token_budget: int = Field(
+        default=1200, validation_alias="CHAT_HISTORY_TOKEN_BUDGET"
+    )
+    chat_rewrite_enabled: bool = Field(
+        default=True, validation_alias="CHAT_REWRITE_ENABLED"
+    )
+    chat_title_enabled: bool = Field(
+        default=True, validation_alias="CHAT_TITLE_ENABLED"
+    )
 
     # App / RAG
     database_url: str | None = Field(default=None, validation_alias="DATABASE_URL")

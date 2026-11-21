@@ -1,4 +1,5 @@
 from models.base import Base, BaseModel
+from models.conversation import Conversation, Message
 from models.document import Document, DocumentChunk
 from models.enums import DocumentStatus, InvitationStatus, MembershipRole
 from models.invitation import Invitation
@@ -11,6 +12,7 @@ from models.workspace import Workspace
 __all__ = [
     "Base",
     "BaseModel",
+    "Conversation",
     "Document",
     "DocumentChunk",
     "DocumentStatus",
@@ -18,6 +20,7 @@ __all__ = [
     "InvitationStatus",
     "Membership",
     "MembershipRole",
+    "Message",
     "ProviderConfig",
     "RefreshToken",
     "User",
