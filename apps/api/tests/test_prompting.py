@@ -252,7 +252,7 @@ async def test_chat_endpoint_returns_citations(
     app.dependency_overrides[get_embedding_provider] = lambda: KeywordEmbeddings()
     try:
         response = await client.post(
-            f"/api/v1/workspaces/{wid}/chat",
+            f"/api/v1/workspaces/{wid}/chat/complete",
             headers=headers,
             json={"query": "alpha"},
         )

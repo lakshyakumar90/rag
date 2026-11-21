@@ -138,7 +138,7 @@ async def test_chat_persists_messages_and_auto_title(
     app.dependency_overrides[get_embedding_provider] = lambda: KeywordEmbeddings()
     try:
         response = await client.post(
-            f"/api/v1/workspaces/{wid}/chat",
+            f"/api/v1/workspaces/{wid}/chat/complete",
             headers=headers,
             json={"query": "alpha", "conversation_id": conversation_id},
         )
@@ -197,7 +197,7 @@ async def test_followup_rewrites_using_history(
     try:
         for query in ("alpha", "what about it?"):
             response = await client.post(
-                f"/api/v1/workspaces/{wid}/chat",
+                f"/api/v1/workspaces/{wid}/chat/complete",
                 headers=headers,
                 json={"query": query, "conversation_id": conversation_id},
             )

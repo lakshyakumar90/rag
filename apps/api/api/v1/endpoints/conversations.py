@@ -7,14 +7,17 @@ from fastapi import APIRouter, Depends, status
 
 from api.v1.dependencies import (
     MemberContext,
+    get_chat_service,
     get_conversation_service,
 )
 from schemas import (
+    ChatResponse,
     ConversationCreate,
     ConversationResponse,
     MessageResponse,
 )
-from services import ConversationService
+from services import ChatService, ConversationService
+from services.chat import cancel_stream
 
 router = APIRouter(prefix="/workspaces", tags=["conversations"])
 
@@ -71,6 +74,46 @@ async def list_messages(
     service: Annotated[ConversationService, Depends(get_conversation_service)],
 ) -> list[MessageResponse]:
     return await service.messages(context, conversation_id)
+
+
+@router.patch(
+    "/{workspace_id}/conversations/{conversation_id}",
+    response_model=ConversationResponse,
+    summary="Rename a conversation",
+)
+async def rename_conversation(
+    conversation_id: uuid.UUID,
+    payload: ConversationCreate,
+    context: MemberContext,
+    service: Annotated[ConversationService, Depends(get_conversation_service)],
+) -> ConversationResponse:
+    return await service.rename(context, conversation_id, payload.title or "")
+
+
+@router.post(
+    "/{workspace_id}/conversations/{conversation_id}/stop",
+    summary="Cancel an in-flight streamed answer",
+)
+async def stop_stream(
+    conversation_id: uuid.UUID,
+    context: MemberContext,
+    service: Annotated[ConversationService, Depends(get_conversation_service)],
+) -> dict[str, bool]:
+    await service.get(context, conversation_id)  # verify ownership
+    return {"cancelled": cancel_stream(conversation_id)}
+
+
+@router.post(
+    "/{workspace_id}/conversations/{conversation_id}/regenerate",
+    response_model=ChatResponse,
+    summary="Replace the last answer with a freshly generated one",
+)
+async def regenerate(
+    conversation_id: uuid.UUID,
+    context: MemberContext,
+    service: Annotated[ChatService, Depends(get_chat_service)],
+) -> ChatResponse:
+    return await service.regenerate_last(context, conversation_id)
 
 
 @router.delete(
