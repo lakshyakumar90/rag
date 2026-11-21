@@ -5,6 +5,7 @@ from api.v1.endpoints.cli import router as cli_router
 from api.v1.endpoints.documents import router as documents_router
 from api.v1.endpoints.invitations import router as invitations_router
 from api.v1.endpoints.provider_configs import router as provider_configs_router
+from api.v1.endpoints.retrieval import router as retrieval_router
 from api.v1.endpoints.users import router as users_router
 from api.v1.endpoints.workspaces import router as workspaces_router
 
@@ -16,6 +17,7 @@ router.include_router(invitations_router)
 router.include_router(documents_router)
 router.include_router(provider_configs_router)
 router.include_router(cli_router)
+router.include_router(retrieval_router)
 
 
 @router.get("/ping")

@@ -13,13 +13,16 @@ from core.database import get_session
 from core.rate_limit import LoginRateLimiter
 from core.redis import get_redis_client
 from models import MembershipRole, User
+from providers.embeddings import EmbeddingProvider, get_embedding_provider
 from providers.minio import MinioStorageClient
 from providers.queue import ArqJobQueue, JobQueue, get_arq_pool
+from providers.rerank import Reranker
 from providers.storage import StorageClient
 from services import (
     AuthService,
     DocumentService,
     ProviderConfigService,
+    RetrievalService,
     UserService,
     WorkspaceService,
 )
@@ -79,6 +82,18 @@ def get_provider_config_service(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> ProviderConfigService:
     return ProviderConfigService(session)
+
+
+def get_reranker() -> Reranker:
+    return Reranker()
+
+
+def get_retrieval_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    embeddings: Annotated[EmbeddingProvider, Depends(get_embedding_provider)],
+    reranker: Annotated[Reranker, Depends(get_reranker)],
+) -> RetrievalService:
+    return RetrievalService(session, embeddings, reranker)
 
 
 async def get_current_user_id(

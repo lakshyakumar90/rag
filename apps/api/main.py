@@ -12,6 +12,7 @@ from core.exceptions import register_exception_handlers
 from core.logging import configure_logging
 from core.middleware import RequestIdMiddleware
 from core.redis import close_redis_client
+from providers.embeddings import close_embedding_provider
 from providers.queue import close_queue_pool, init_queue_pool
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,7 @@ async def lifespan(app: FastAPI):
         logger.warning("job queue unavailable at startup: %s", exc)
     yield
     await close_queue_pool()
+    await close_embedding_provider()
     await close_redis_client()
     await dispose_engine()
 

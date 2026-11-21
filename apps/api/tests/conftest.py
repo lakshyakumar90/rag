@@ -9,7 +9,11 @@ from cryptography.fernet import Fernet
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from api.v1.dependencies import get_job_queue, get_storage_client
+from api.v1.dependencies import (
+    get_embedding_provider,
+    get_job_queue,
+    get_storage_client,
+)
 from core.config import get_settings
 from core.database import get_session
 from core.redis import get_redis_client
@@ -146,6 +150,7 @@ async def client(
     fake_redis: FakeRedis,
     fake_storage: FakeStorage,
     fake_job_queue: FakeJobQueue,
+    fake_embedding_provider: FakeEmbeddingProvider,
 ) -> AsyncIterator[AsyncClient]:
     async def override_get_session() -> AsyncIterator[AsyncSession]:
         async with session_factory() as session:
@@ -155,6 +160,7 @@ async def client(
     app.dependency_overrides[get_redis_client] = lambda: fake_redis
     app.dependency_overrides[get_storage_client] = lambda: fake_storage
     app.dependency_overrides[get_job_queue] = lambda: fake_job_queue
+    app.dependency_overrides[get_embedding_provider] = lambda: fake_embedding_provider
     try:
         # https so Secure cookies are stored and sent back by httpx's jar.
         async with AsyncClient(
