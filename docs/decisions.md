@@ -278,3 +278,31 @@ All routes are under `/api/v1` and require a Bearer access token:
   document id, queue outage does not fail upload, success → ready, retry
   backoff values, no failure recorded before the last try, terminal failure
   persisted, timeout persisted, worker settings. 7 new tests; 52 total pass.
+
+## Extraction (5.2)
+
+- **Libraries:** PyMuPDF for PDF (`page.get_text`, real page numbers) and
+  python-docx for DOCX (paragraphs + table cells); TXT/MD are UTF-8 reads.
+  Extraction runs in `asyncio.to_thread` from the ARQ task.
+- **Cleaning** (`workers/extraction.py`): collapse repeated whitespace,
+  repair `inter-\nnational` hyphenation, and strip running headers/footers —
+  lines appearing on ≥60% of pages (min 4 chars) plus numeric-only page labels.
+  Only applied across multi-page documents (≥3 pages).
+- **Chunking:** cleaned pages are split into ≤1000-character word-boundary
+  chunks. Added a nullable `page_number` column to `document_chunks`
+  (migration `e27794609ef5`) so PDF provenance survives; it is null for
+  TXT/MD/DOCX. The worker deletes old chunks before writing new ones, making
+  reprocessing idempotent, and stores the real PDF `page_count` on the document.
+- **Empty/scanned PDFs:** no selectable text (under 20 chars across all pages,
+  including graphics-only pages) raises `EmptyDocumentError` with a message
+  that explicitly says OCR is unavailable; encrypted PDFs raise
+  `EncryptedDocumentError`. These are **permanent** extraction errors: the
+  worker records `status=failed` + the message on the document immediately,
+  without consuming retry attempts. Transient errors (e.g. storage) keep the
+  previous retry-with-backoff behavior.
+- **Worker context** now injects a `StorageClient` as well as the session
+  factory; tests supply an in-memory fake and can exercise the full
+  download → extract → chunk → persist path.
+- **Tests:** PDF page numbers + header/hyphenation cleaning, DOCX/TXT/MD,
+  empty and graphics-only PDF rejection, chunk page numbers, worker storing
+  chunks, permanent failure without retry. 5 new tests; 57 total pass.
