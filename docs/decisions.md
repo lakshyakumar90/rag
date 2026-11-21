@@ -391,3 +391,27 @@ Three strategies in `workers/chunking.py`, all returning the same `Chunk`
   vector/tsvector columns on SQLite, re-index reset/enqueue, re-index role and
   cross-tenant rules, and an offline Alembic SQL check for `vector(768)`,
   HNSW/cosine and GIN/tsvector. 5 new tests; 84 total pass.
+
+## LLM Interface (6.1)
+
+- **Protocol** (`providers/llm/base.py`): `LLMProvider` with
+  `stream(messages, **opts) -> AsyncIterator[LLMEvent]` and
+  `complete(messages, **opts) -> Completion`; runtime-checkable so adapters can
+  be verified structurally. Options are keyword args, with common names
+  (`model`, `temperature`, `max_tokens`) mapped by each adapter.
+- **Normalized types** (`providers/llm/types.py`): `ChatMessage(role, content)`
+  and stream events `TextDelta`, `Usage`, `Finish`, `Error` (union `LLMEvent`).
+  `complete` returns `Completion(text, finish_reason, usage)`. Unknown provider
+  finish reasons map to `other` instead of raising.
+- **Registry/factory** (`providers/llm/registry.py`): name → factory map with
+  `register_provider`, `available_providers`, and `create_llm_provider` which
+  defaults to `LLM_PROVIDER` (`ollama`). Unknown names raise
+  `UnknownProviderError`.
+- **Built-in adapter:** `OllamaLLMProvider` uses Ollama's NDJSON `/api/chat`,
+  emitting text deltas, then usage, then finish; HTTP/JSON failures emit an
+  `Error` event rather than killing the stream, and `complete` aggregates the
+  same stream into one result so both paths behave identically.
+- **Tests** (`apps/api/tests/test_llm.py`): protocol conformance, normalized
+  event ordering/aggregation, error events, option mapping, registry built-ins
+  and custom providers. 8 new tests; 92 total pass. HTTP is mocked; no live
+  model call is needed for the interface.
