@@ -13,7 +13,9 @@ from core.database import get_session
 from core.rate_limit import LoginRateLimiter
 from core.redis import get_redis_client
 from models import MembershipRole, User
-from services import AuthService, UserService, WorkspaceService
+from providers.minio import MinioStorageClient
+from providers.storage import StorageClient
+from services import AuthService, DocumentService, UserService, WorkspaceService
 from services.exceptions import (
     InsufficientRoleError,
     InvalidAccessTokenError,
@@ -48,6 +50,17 @@ def get_login_rate_limiter(
     redis_client: Annotated[Redis, Depends(get_redis_client)],
 ) -> LoginRateLimiter:
     return LoginRateLimiter(redis_client)
+
+
+def get_storage_client() -> StorageClient:
+    return MinioStorageClient()
+
+
+def get_document_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    storage: Annotated[StorageClient, Depends(get_storage_client)],
+) -> DocumentService:
+    return DocumentService(session, storage)
 
 
 async def get_current_user_id(
@@ -115,3 +128,7 @@ _require_inviter = require_role(MembershipRole.OWNER, MembershipRole.ADMIN)
 OwnerContext = Annotated[WorkspaceContext, Depends(_require_owner)]
 #: Owners and admins may invite; plain members may not.
 InviterContext = Annotated[WorkspaceContext, Depends(_require_inviter)]
+
+# Same role rule for documents: only owners and admins manage files.
+_require_uploader = require_role(MembershipRole.OWNER, MembershipRole.ADMIN)
+UploaderContext = Annotated[WorkspaceContext, Depends(_require_uploader)]
