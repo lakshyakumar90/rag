@@ -17,12 +17,7 @@ from core.config import get_settings
 from core.security import hash_password
 from models import Document, DocumentChunk, DocumentStatus, User, Workspace
 from workers import ingest
-from workers.extraction import (
-    EmptyDocumentError,
-    ExtractedPage,
-    chunk_pages,
-    extract,
-)
+from workers.extraction import EmptyDocumentError, extract
 from workers.settings import WorkerSettings
 
 PASSWORD = "StrongPassw0rd!"
@@ -181,6 +176,44 @@ async def test_ingest_stores_chunks_from_text(
         assert "First paragraph here" in chunks[0].content
 
 
+async def test_ingest_persists_heading_path_and_token_count(
+    session_factory: async_sessionmaker[AsyncSession], fake_storage
+) -> None:
+    markdown = (
+        b"# Guide\n\nIntroduction with enough text to keep.\n\n"
+        b"## Install\n\nInstallation steps with enough text to keep."
+    )
+    document_id = await _document(
+        session_factory,
+        storage=fake_storage,
+        mime_type="text/markdown",
+        data=markdown,
+    )
+    await ingest.ingest_document(_ctx(session_factory, fake_storage), str(document_id))
+
+    async with session_factory() as session:
+        chunks = (
+            (
+                await session.execute(
+                    select(DocumentChunk)
+                    .where(DocumentChunk.document_id == document_id)
+                    .order_by(DocumentChunk.chunk_index)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert chunks
+        assert [chunk.chunk_index for chunk in chunks] == list(range(len(chunks)))
+        assert all(chunk.workspace_id == chunks[0].workspace_id for chunk in chunks)
+        assert all(chunk.token_count > 0 for chunk in chunks)
+        assert {tuple(chunk.heading_path or ()) for chunk in chunks} == {
+            ("Guide",),
+            ("Guide", "Install"),
+        }
+        assert all(chunk.page_number is None for chunk in chunks)
+
+
 async def test_ingest_retries_with_exponential_backoff(
     session_factory: async_sessionmaker[AsyncSession], fake_storage, monkeypatch
 ) -> None:
@@ -291,13 +324,6 @@ def test_empty_and_scanned_pdfs_are_rejected() -> None:
     document.close()
     with pytest.raises(EmptyDocumentError, match="No selectable text"):
         extract(scanned, "application/pdf")
-
-
-def test_chunking_preserves_page_numbers() -> None:
-    pages = [ExtractedPage(1, "one two three four"), ExtractedPage(2, "five six")]
-    chunks = chunk_pages(pages, max_chars=10)
-    assert [chunk.page_number for chunk in chunks] == [1, 1, 1, 2]
-    assert [chunk.index for chunk in chunks] == [0, 1, 2, 3]
 
 
 async def test_empty_pdf_fails_immediately_without_retry(
