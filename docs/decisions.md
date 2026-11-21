@@ -439,3 +439,28 @@ Three strategies in `workers/chunking.py`, all returning the same `Chunk`
   both adapters' event ordering/payloads/headers, system extraction, HTTP
   error mapping, and factory construction. 8 new tests; 100 total pass. All HTTP
   is mocked; no API keys or live endpoints are required.
+
+## BYOK Key Management (6.3)
+
+- **Model** (`ProviderConfig`): `user_id`, `provider_type`, `base_url`, `model`,
+  `encrypted_api_key`, `key_last4` (migration `ed3feb203165`). All repository
+  reads/writes are filtered by `user_id`; there is no endpoint that can reach
+  another user's config.
+- **Encryption:** Fernet with `LLM_MASTER_KEY` from the environment
+  (`core/crypto.py`). The plaintext key is never logged, returned, or stored;
+  only the ciphertext and last four characters. `ProviderConfigResponse` has no
+  key fields at all, and connection-test errors are sanitized by replacing the
+  plaintext secret with `***`. A missing/invalid master key returns 503.
+- **SSRF guard:** `core/net.py` requires http(s) with a host and no embedded
+  credentials, and blocks localhost, loopback/private/link-local/reserved IPs
+  unless `LOCAL_MODE_ENABLED=true`. DNS names are allowed; DNS-rebinding
+  protection belongs in the production egress layer (documented limitation).
+- **Endpoints:** `POST/GET /provider-configs`, `GET/PATCH/DELETE
+  /provider-configs/{id}`, and `POST /{id}/test`. Update rotates the key by
+  supplying a new `api_key`. Test connection decrypts in memory, builds the
+  provider via the registry, sends a one-token request, reports
+  `ok`/`message`/`latency_ms`, and maps failures to `ConnectionTestError` (502).
+- **Tests** (`apps/api/tests/test_provider_configs.py`): crypto round-trip,
+  master-key requirement, URL blocking/local-mode, CRUD with no key leakage
+  (also checked via caplog), cross-user 404s, successful and sanitized-failure
+  connection tests. 8 new tests; 108 total pass.
