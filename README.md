@@ -2,6 +2,8 @@
 
 This is a local-first, multi-tenant RAG (retrieval-augmented generation) app built with **FastAPI** and **Next.js**. It ingests PDF, DOCX, TXT and Markdown files into **pgvector + PostgreSQL full-text search**, answers questions with **grounded `[n]` citations**, and streams answers over **SSE** so the UI can render tokens as they arrive. Workspaces give each tenant isolated documents, conversations and settings; roles control who can upload, invite and administer. Bring-your-own-key (BYOK) providers let users supply their own OpenAI-compatible or Anthropic credentials (encrypted at rest), while the default stack runs entirely on local infrastructure with Ollama. Everything is orchestrated with Docker Compose, with Caddy as the single public entry point.
 
+Read the public documentation at **/docs** on any running web deployment, or open **/floorplan** for the interactive architecture map. Both routes are accessible without signing in.
+
 > Looking for the design rationale? Start with [docs/architecture.md](docs/architecture.md), the [retrieval quality numbers](docs/evaluation.md), the [decision log](docs/decisions.md), and [backup/restore](docs/backup.md).
 
 ## Quick start (under 10 minutes)

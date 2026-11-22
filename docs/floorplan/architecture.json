@@ -1,0 +1,341 @@
+{
+  "$schema": "floorplan/architecture@1",
+  "project": {
+    "name": "RAG Workspace",
+    "summary": "Local-first retrieval-augmented generation with public documentation and isolated workspaces.",
+    "entrypoints": [
+      "apps/web/app/page.tsx",
+      "apps/api/main.py",
+      "apps/api/workers/settings.py"
+    ]
+  },
+  "include": [
+    "code"
+  ],
+  "ignore": [
+    "apps/web/public/floorplan/**",
+    "**/node_modules/**",
+    "**/.next/**"
+  ],
+  "nodes": [
+    {
+      "id": "web",
+      "label": "Web application",
+      "kind": "ui",
+      "paths": [
+        "apps/web/app/**",
+        "apps/web/components/**",
+        "apps/web/lib/**"
+      ],
+      "summary": "Renders workspaces and public docs. Drives the upload and chat interfaces."
+    },
+    {
+      "id": "web.docs",
+      "label": "Public docs",
+      "kind": "feature",
+      "paths": [
+        "apps/web/app/(public-docs)/**",
+        "apps/web/content/docs/**",
+        "docs/floorplan/**"
+      ],
+      "summary": "Static Markdown pages and an interactive map that require no sign-in.",
+      "parent": "web"
+    },
+    {
+      "id": "api",
+      "label": "FastAPI",
+      "kind": "service",
+      "paths": [
+        "apps/api/main.py",
+        "apps/api/api/**",
+        "apps/api/schemas/**",
+        "apps/api/core/**"
+      ],
+      "summary": "Validates HTTP inputs, authenticates workspace requests and chooses a service."
+    },
+    {
+      "id": "services",
+      "label": "Application services",
+      "kind": "library",
+      "paths": [
+        "apps/api/services/**"
+      ],
+      "summary": "Owns business rules for sources, retrieval, chat, settings and administration."
+    },
+    {
+      "id": "services.retrieval",
+      "label": "Retrieval and answers",
+      "kind": "feature",
+      "paths": [
+        "apps/api/services/retrieval.py",
+        "apps/api/services/chat.py",
+        "apps/api/services/query_cache.py"
+      ],
+      "summary": "Finds and ranks readable chunks, then streams grounded responses.",
+      "parent": "services"
+    },
+    {
+      "id": "data",
+      "label": "Database layer",
+      "kind": "data",
+      "paths": [
+        "apps/api/repositories/**",
+        "apps/api/models/**",
+        "apps/api/alembic/**"
+      ],
+      "summary": "PostgreSQL records identity, documents, chunk data, conversations and workspace state."
+    },
+    {
+      "id": "workers",
+      "label": "Ingestion workers",
+      "kind": "service",
+      "paths": [
+        "apps/api/workers/**"
+      ],
+      "summary": "Consumes ARQ jobs and extracts documents, applies OCR, chunks text, embeds and writes progress."
+    },
+    {
+      "id": "adapters",
+      "label": "Provider adapters",
+      "kind": "library",
+      "paths": [
+        "apps/api/providers/**"
+      ],
+      "summary": "Interfaces to embedding, generation, vectors, queue and object storage."
+    },
+    {
+      "id": "adapters.models",
+      "label": "Generation adapters",
+      "kind": "feature",
+      "paths": [
+        "apps/api/providers/cli/**",
+        "apps/api/providers/llm/**"
+      ],
+      "summary": "Normalizes API and local CLI providers for answer generation.",
+      "parent": "adapters"
+    },
+    {
+      "id": "infra",
+      "label": "Deployment and scripts",
+      "kind": "infra",
+      "paths": [
+        "docker-compose*.yml",
+        "Caddyfile",
+        "scripts/**",
+        "apps/**/Dockerfile",
+        "*.toml",
+        "*.yaml",
+        "*.json"
+      ],
+      "summary": "Compose topology, Caddy routing and setup or repair helpers."
+    },
+    {
+      "id": "quality",
+      "label": "Tests and evaluation",
+      "kind": "feature",
+      "paths": [
+        "apps/api/tests/**",
+        "apps/web/e2e/**",
+        "evals/**",
+        ".github/**"
+      ],
+      "summary": "Verifies contracts and measures retrieval on controlled corpora."
+    },
+    {
+      "id": "qdrant",
+      "label": "Qdrant",
+      "kind": "data",
+      "paths": [],
+      "summary": "Dimension-based vector collections with profile and tenant filtering."
+    },
+    {
+      "id": "redis",
+      "label": "Redis",
+      "kind": "data",
+      "paths": [],
+      "summary": "Carries ARQ jobs and shared runtime state."
+    },
+    {
+      "id": "objects",
+      "label": "S3 object storage",
+      "kind": "data",
+      "paths": [],
+      "summary": "Stores original or normalized source payloads."
+    },
+    {
+      "id": "embedding",
+      "label": "Embedding service",
+      "kind": "external",
+      "paths": [],
+      "summary": "Produces query and document vectors using the active profile."
+    }
+  ],
+  "edges": [
+    {
+      "from": "web",
+      "to": "api",
+      "kind": "http",
+      "label": "Authenticated workspace calls and SSE"
+    },
+    {
+      "from": "api",
+      "to": "services",
+      "kind": "call",
+      "label": "Validate and forward to services"
+    },
+    {
+      "from": "services",
+      "to": "data",
+      "kind": "data",
+      "label": "Authorize and persist application records"
+    },
+    {
+      "from": "services",
+      "to": "adapters",
+      "kind": "call",
+      "label": "Use queue, storage and models"
+    },
+    {
+      "from": "services.retrieval",
+      "to": "qdrant",
+      "kind": "data",
+      "label": "Search scoped vectors"
+    },
+    {
+      "from": "services.retrieval",
+      "to": "adapters.models",
+      "kind": "call",
+      "label": "Stream grounded generation"
+    },
+    {
+      "from": "adapters",
+      "to": "redis",
+      "kind": "data",
+      "label": "Enqueue ingestion and profile jobs"
+    },
+    {
+      "from": "redis",
+      "to": "workers",
+      "kind": "data",
+      "label": "Deliver jobs to ARQ"
+    },
+    {
+      "from": "services",
+      "to": "objects",
+      "kind": "data",
+      "label": "Write original uploads"
+    },
+    {
+      "from": "workers",
+      "to": "objects",
+      "kind": "data",
+      "label": "Read source payload"
+    },
+    {
+      "from": "workers",
+      "to": "embedding",
+      "kind": "call",
+      "label": "Embed batches"
+    },
+    {
+      "from": "workers",
+      "to": "data",
+      "kind": "data",
+      "label": "Persist chunks and job progress"
+    },
+    {
+      "from": "workers",
+      "to": "qdrant",
+      "kind": "data",
+      "label": "Synchronize vector points"
+    }
+  ],
+  "flows": [
+    {
+      "id": "indexing",
+      "title": "Index a source",
+      "steps": [
+        {
+          "node": "web",
+          "note": "Upload or import a source."
+        },
+        {
+          "node": "api",
+          "note": "Validate identity and source input."
+        },
+        {
+          "node": "objects",
+          "note": "Keep the original bytes."
+        },
+        {
+          "node": "redis",
+          "note": "Queue the indexing job."
+        },
+        {
+          "node": "workers",
+          "note": "Extract, OCR where needed, and chunk."
+        },
+        {
+          "node": "embedding",
+          "note": "Embed chunk batches."
+        },
+        {
+          "node": "data",
+          "note": "Persist chunk and progress records."
+        },
+        {
+          "node": "qdrant",
+          "note": "Synchronize vector points."
+        }
+      ]
+    },
+    {
+      "id": "answer",
+      "title": "Answer with citations",
+      "steps": [
+        {
+          "node": "web",
+          "note": "Send a question and selected model."
+        },
+        {
+          "node": "api",
+          "note": "Check workspace membership."
+        },
+        {
+          "node": "services.retrieval",
+          "note": "Find readable evidence and fuse rankings."
+        },
+        {
+          "node": "qdrant",
+          "note": "Return vector candidates."
+        },
+        {
+          "node": "data",
+          "note": "Resolve canonical chunks and save conversation turns."
+        },
+        {
+          "node": "adapters.models",
+          "note": "Generate an answer from the evidence."
+        },
+        {
+          "node": "web",
+          "note": "Render tokens and citation snippets."
+        }
+      ]
+    },
+    {
+      "id": "docs",
+      "title": "Read public documentation",
+      "steps": [
+        {
+          "node": "web.docs",
+          "note": "Next renders repository-authored Markdown at build time."
+        },
+        {
+          "node": "web",
+          "note": "The web server serves docs and the interactive map without workspace credentials."
+        }
+      ]
+    }
+  ]
+}

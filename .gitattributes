@@ -1,0 +1,2 @@
+# Preserve the upstream Floorplan export and its inline script hashes.
+apps/web/public/floorplan/index.html text eol=lf whitespace=-blank-at-eol

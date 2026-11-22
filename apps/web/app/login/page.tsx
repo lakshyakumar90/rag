@@ -77,6 +77,9 @@ export default function LoginPage() {
               Create an account
             </Link>
           </p>
+          <Link href="/docs" className="mt-4 inline-block text-[13px] text-muted-foreground underline underline-offset-4">
+            Read the documentation
+          </Link>
         </div>
       </div>
     </main>
