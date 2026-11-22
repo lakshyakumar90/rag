@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- builder: resolve dependencies from the committed lockfile ----
-FROM python:3.12-slim AS builder
+FROM python:3.15-slim AS builder
 
 # Pin uv to the version that produced uv.lock for reproducible installs.
 COPY --from=ghcr.io/astral-sh/uv:0.12.13 /uv /uvx /bin/
@@ -21,7 +21,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-project --no-dev
 
 # ---- runtime: minimal image, non-root ----
-FROM python:3.12-slim AS runtime
+FROM python:3.15-slim AS runtime
 
 # OCR engine for scanned PDF pages; language packs are configurable at runtime.
 RUN apt-get update \
