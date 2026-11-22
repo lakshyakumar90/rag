@@ -38,6 +38,10 @@ class Conversation(BaseModel):
         index=True,
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
+    # Per-conversation override of the user's Settings defaults. Null means
+    # "use the default", so existing conversations keep their old behavior.
+    provider: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(160), nullable=True)
 
     messages: Mapped[list["Message"]] = relationship(
         back_populates="conversation", cascade="all, delete-orphan"

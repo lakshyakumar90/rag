@@ -1,11 +1,14 @@
 """Document metadata and chunks (embeddings come in a later phase)."""
 
 import uuid
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     CheckConstraint,
+    DateTime,
     FetchedValue,
     ForeignKey,
     Index,
@@ -65,12 +68,48 @@ class Document(BaseModel):
         server_default=DocumentStatus.PENDING.value,
     )
     error: Mapped[str | None] = mapped_column(String(MAX_ERROR_LENGTH), nullable=True)
+    # Provenance for uploads and external sources (URL, GitHub, Notion export).
+    source_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    source_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    source_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # False keeps the v1 default: workspace roles are the only permission rule.
+    # True switches the document to an explicit per-user grant allow-list.
+    restricted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Embedding provenance (global settings for v1).
+    # Embedding provenance. ``embedding_profile`` selects the Qdrant collection;
+    # model/dim are the concrete values used for this document's vectors.
     embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     embedding_dim: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Embedding progress is committed separately from the atomic chunk replacement.
-    ingestion_stage: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    embedding_profile: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Monotonic version bumped on every re-index. Points carry it in their
+    # payload so a superseded index can never be returned as current.
+    index_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    # Persistent progress. Every value is written by the worker in its own
+    # committed transaction, so a reload or reconnect shows real work done.
+    upload_bytes: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    upload_total: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    ingestion_stage: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    pages_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pages_done: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    ocr_pages_done: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    ocr_pages_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    unreadable_pages: Mapped[list[int] | None] = mapped_column(JSON, nullable=True)
+    sections_done: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    sections_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
     chunks_embedded: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0")
     )
@@ -79,6 +118,15 @@ class Document(BaseModel):
     )
     chunks_done: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0")
+    )
+    chunks_indexed: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    progress_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    qdrant_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
     uploader: Mapped["User"] = relationship(back_populates="uploaded_documents")
@@ -104,6 +152,13 @@ class Document(BaseModel):
         if not isinstance(value, str) or not value.strip():
             raise ValueError("filename is required")
         return value
+
+    @property
+    def progress_percent(self) -> float | None:
+        """Derived from committed worker progress; 100 only when searchable."""
+        from core.progress import progress_percent
+
+        return progress_percent(self)
 
 
 class DocumentChunk(BaseModel):

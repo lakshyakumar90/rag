@@ -19,6 +19,10 @@ x-api-env: &api-env
   MINIO_HOST: minio
   MINIO_PORT: 4566
   MINIO_BUCKET: ${MINIO_BUCKET:-rag}
+  QDRANT_URL: http://qdrant:6333
+  QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+  # Enable only after the PostgreSQL -> Qdrant backfill has been verified.
+  QDRANT_ENABLED: ${QDRANT_ENABLED:-false}
   JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set in .env}
   LLM_MASTER_KEY: ${LLM_MASTER_KEY:?LLM_MASTER_KEY must be set in .env}
   LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
@@ -40,6 +44,22 @@ x-api-build: &api-build
   dockerfile: apps/api/Dockerfile
 
 services:
+  qdrant:
+    image: qdrant/qdrant:v1.12.1
+    container_name: rag-prod-qdrant
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-}
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      # The pinned image has no curl/wget; bash is available.
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    restart: unless-stopped
+
   caddy:
     image: caddy:2-alpine
     container_name: rag-caddy
@@ -111,6 +131,8 @@ services:
         condition: service_completed_successfully
       migrate:
         condition: service_completed_successfully
+      qdrant:
+        condition: service_healthy
     healthcheck:
       test:
         - CMD
@@ -132,6 +154,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      qdrant:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
@@ -266,3 +290,4 @@ volumes:
   redis_data:
   minio_data:
   ollama_data:
+  qdrant_data:

@@ -28,6 +28,11 @@ export type FeedbackResponse = S["FeedbackResponse"];
 export type Usage = S["UsageResponse"];
 export type Analytics = S["AnalyticsResponse"];
 export type AuditEntry = S["AuditEntryResponse"];
+export type AIProviderOptions = S["ProviderOptionsResponse"];
+export type AIProviderOption = S["ProviderOption"];
+export type AIDefaults = S["AIDefaultsResponse"];
+export type ProviderTest = S["ProviderTestResponse"];
+export type ProviderModels = S["ProviderModelsResponse"];
 
 /** Static (parameterless) path, checked against the generated schema. */
 export function request<T>(path: keyof paths, init?: RequestInit): Promise<T> {
@@ -65,10 +70,55 @@ export const api = {
         status ? `?status=${status}` : ""
       }`,
     ),
+  documentSnippet: (workspaceId: string, documentId: string, chunkId: string) =>
+    requestPath<S["DocumentSnippetResponse"]>(
+      `/api/v1/workspaces/${workspaceId}/documents/${documentId}/chunks/${chunkId}`,
+    ),
   deleteDocument: (workspaceId: string, documentId: string) =>
     apiRequest<void>(`/api/v1/workspaces/${workspaceId}/documents/${documentId}`, {
       method: "DELETE",
     }),
+  createSource: (workspaceId: string, body: S["SourceCreate"]) =>
+    apiRequest<Document>(
+      `/api/v1/workspaces/${workspaceId}/sources`,
+      json(body),
+    ),
+  documentGrants: (workspaceId: string, documentId: string) =>
+    requestPath<S["GrantResponse"]>(
+      `/api/v1/workspaces/${workspaceId}/documents/${documentId}/grants`,
+    ),
+  updateDocumentGrants: (
+    workspaceId: string,
+    documentId: string,
+    restricted: boolean,
+    userIds: string[],
+  ) =>
+    apiRequest<S["GrantResponse"]>(
+      `/api/v1/workspaces/${workspaceId}/documents/${documentId}/grants`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ restricted, user_ids: userIds }),
+      },
+    ),
+  cacheStats: () => request<Record<string, number>>("/api/v1/ai/cache-stats"),
+  embeddingProfiles: () =>
+    request<S["EmbeddingProfileResponse"][]>("/api/v1/embedding-profiles"),
+  createEmbeddingProfile: (body: S["EmbeddingProfileCreate"]) =>
+    apiRequest<S["EmbeddingProfileResponse"]>(
+      "/api/v1/embedding-profiles",
+      json(body),
+    ),
+  validateEmbeddingProfile: (name: string) =>
+    apiRequest<S["EmbeddingProfileValidation"]>(
+      `/api/v1/embedding-profiles/${encodeURIComponent(name)}/validate`,
+      { method: "POST" },
+    ),
+  switchWorkspaceProfile: (workspaceId: string, profileName: string) =>
+    apiRequest<Record<string, string>>(
+      `/api/v1/embedding-profiles/workspaces/${workspaceId}/switch`,
+      json({ profile_name: profileName }),
+    ),
   reindexDocument: (workspaceId: string, documentId: string) =>
     apiRequest<Document>(
       `/api/v1/workspaces/${workspaceId}/documents/${documentId}/reindex`,
@@ -97,10 +147,15 @@ export const api = {
 
   conversations: (workspaceId: string) =>
     requestPath<Conversation[]>(`/api/v1/workspaces/${workspaceId}/conversations`),
-  createConversation: (workspaceId: string, title?: string) =>
+  createConversation: (
+    workspaceId: string,
+    title?: string,
+    provider?: string,
+    model?: string,
+  ) =>
     apiRequest<Conversation>(
       `/api/v1/workspaces/${workspaceId}/conversations`,
-      json({ title: title ?? null }),
+      json({ title: title ?? null, provider: provider ?? null, model: model ?? null }),
     ),
   messages: (workspaceId: string, conversationId: string) =>
     requestPath<Message[]>(
@@ -145,6 +200,39 @@ export const api = {
   deleteProviderConfig: (id: string) =>
     apiRequest<void>(`/api/v1/provider-configs/${id}`, { method: "DELETE" }),
   cliStatus: () => request<CLIStatus>("/api/v1/providers/cli/status"),
+
+  aiProviders: () => request<AIProviderOptions>("/api/v1/ai/providers"),
+  aiDefaults: () => request<AIDefaults>("/api/v1/ai/defaults"),
+  saveAIDefaults: (provider: string, model: string | null) =>
+    apiRequest<AIDefaults>(
+      "/api/v1/ai/defaults",
+      json({ provider, model: model || null }),
+    ),
+  testAIProvider: (provider: string, model?: string | null, configId?: string | null) =>
+    apiRequest<ProviderTest>(
+      "/api/v1/ai/test",
+      json({ provider, model: model || null, config_id: configId || null }),
+    ),
+  aiModels: (provider: string, configId?: string | null) =>
+    requestPath<ProviderModels>(
+      `/api/v1/ai/models?provider=${encodeURIComponent(provider)}${
+        configId ? `&config_id=${encodeURIComponent(configId)}` : ""
+      }`,
+    ),
+  setConversationSelection: (
+    workspaceId: string,
+    conversationId: string,
+    provider: string | null,
+    model: string | null,
+  ) =>
+    apiRequest<Conversation>(
+      `/api/v1/workspaces/${workspaceId}/conversations/${conversationId}/selection`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, model }),
+      },
+    ),
   acceptInvitation: (token: string) =>
     apiRequest<Workspace>("/api/v1/invitations/accept", json({ token })),
 

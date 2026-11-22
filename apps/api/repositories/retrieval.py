@@ -191,6 +191,89 @@ class RetrievalRepository:
         rows = (await self._session.execute(sql, bind)).all()
         return _positive([self._from_row(row) for row in rows])
 
+    async def verify_qdrant_hits(
+        self,
+        workspace_id: uuid.UUID,
+        hits: list[dict],
+        document_ids: list[uuid.UUID] | None = None,
+        profile: str | None = None,
+    ) -> list[ScoredChunk]:
+        """Re-authorize and re-read Qdrant hits from PostgreSQL.
+
+        Qdrant is a cache of ids and vectors, never of text or permissions. A
+        hit is accepted only if its chunk still exists, belongs to this
+        workspace, is in a ready document, matches the active embedding
+        profile/index version and passes the caller's document filter.
+        """
+        if not hits:
+            return []
+        scores: dict[uuid.UUID, float] = {}
+        for hit in hits:
+            try:
+                chunk_id = uuid.UUID(str(hit["id"]))
+            except (ValueError, KeyError, TypeError):
+                continue
+            scores[chunk_id] = float(hit.get("score", 0.0))
+        if not scores:
+            return []
+        conditions = [
+            DocumentChunk.id.in_(list(scores)),
+            DocumentChunk.workspace_id == workspace_id,
+            Document.status == DocumentStatus.READY,
+            DocumentChunk.embedding.is_not(None),
+        ]
+        if document_ids:
+            conditions.append(DocumentChunk.document_id.in_(document_ids))
+        result = await self._session.execute(
+            select(
+                DocumentChunk,
+                Document.filename,
+                Document.embedding_profile,
+                Document.index_version,
+            )
+            .join(Document, Document.id == DocumentChunk.document_id)
+            .where(*conditions)
+        )
+        verified: list[ScoredChunk] = []
+        for chunk, filename, chunk_profile, index_version in result.all():
+            payload = next(
+                (
+                    hit.get("payload") or {}
+                    for hit in hits
+                    if str(hit.get("id")) == str(chunk.id)
+                ),
+                {},
+            )
+            if profile and chunk_profile and chunk_profile != profile:
+                continue
+            if (
+                payload.get("embedding_profile")
+                and profile
+                and payload["embedding_profile"] != profile
+            ):
+                continue
+            if (
+                payload.get("index_version") is not None
+                and payload["index_version"] != index_version
+            ):
+                continue
+            if payload.get("workspace_id") and str(payload["workspace_id"]) != str(
+                workspace_id
+            ):
+                continue
+            verified.append(
+                ScoredChunk(
+                    chunk_id=chunk.id,
+                    document_id=chunk.document_id,
+                    filename=filename,
+                    content=chunk.content,
+                    page_number=chunk.page_number,
+                    heading_path=chunk.heading_path,
+                    score=scores[chunk.id],
+                )
+            )
+        return sorted(verified, key=lambda item: item.score, reverse=True)
+
     @staticmethod
     def _from_row(row) -> ScoredChunk:
         return ScoredChunk(

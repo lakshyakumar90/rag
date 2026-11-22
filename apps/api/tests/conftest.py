@@ -104,6 +104,18 @@ class FakeJobQueue:
         self.jobs.append(document_id)
         return f"job-{len(self.jobs)}"
 
+    async def enqueue_profile_switch(
+        self, workspace_id: uuid.UUID, profile_name: str
+    ) -> str | None:
+        if self.fail:
+            raise RuntimeError("queue is down")
+        return f"switch-{workspace_id}-{profile_name}"
+
+    async def enqueue_source(self, document_id: uuid.UUID) -> str | None:
+        if self.fail:
+            raise RuntimeError("queue is down")
+        return f"source-{document_id}"
+
 
 @pytest.fixture
 def fake_job_queue() -> FakeJobQueue:

@@ -27,7 +27,6 @@ import {
   DialogContent,
   DialogDescription,
   DialogTitle,
-  DialogTrigger,
 } from "./ui/dialog";
 import {
   DropdownMenu,
@@ -106,57 +105,65 @@ function UserMenu() {
 
 function CommandPalette({
   workspaceId,
-  trigger,
-  shortcut = false,
+  open,
+  onOpenChange,
 }: {
   workspaceId: string;
-  trigger: React.ReactNode;
-  shortcut?: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const router = useRouter();
+  const [query, setQuery] = useState("");
+  const [debounced, setDebounced] = useState("");
 
   useEffect(() => {
-    if (!shortcut) return;
-    const handler = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        setOpen((value) => !value);
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [shortcut]);
+    const timer = window.setTimeout(() => setDebounced(query.trim()), 200);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  const results = useQuery({
+    queryKey: ["workspace-search", workspaceId, debounced],
+    queryFn: () => api.search(workspaceId, debounced),
+    enabled: open && debounced.length >= 2,
+    staleTime: 30_000,
+    retry: false,
+  });
+
+  function go(path: string) {
+    router.push(path);
+    onOpenChange(false);
+    setQuery("");
+  }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent side="top" className="p-0">
-        <DialogTitle className="sr-only">Command menu</DialogTitle>
-        <DialogDescription className="sr-only">Navigate the workspace</DialogDescription>
+        <DialogTitle className="sr-only">Workspace search</DialogTitle>
+        <DialogDescription className="sr-only">
+          Search documents or navigate the workspace
+        </DialogDescription>
         <Command className="rounded-[10px]" loop>
           <div className="flex items-center gap-2 border-b border-border pl-4 pr-14">
             <Search size={15} className="text-muted-foreground" />
             <Command.Input
               autoFocus
-              placeholder="Go to…"
-              aria-label="Search workspace pages"
+              value={query}
+              onValueChange={setQuery}
+              placeholder="Search documents or go to…"
+              aria-label="Search workspace documents and pages"
               className="h-12 min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
             />
           </div>
-          <Command.List className="max-h-[min(18rem,calc(100dvh-9rem))] overflow-y-auto overscroll-contain p-2">
+          <Command.List className="max-h-[min(24rem,calc(100dvh-9rem))] overflow-y-auto overscroll-contain p-2">
             <Command.Empty className="px-3 py-6 text-center text-[13px] text-muted-foreground">
               No results
             </Command.Empty>
-            <Command.Group>
+            <Command.Group heading="Pages">
               {NAV.map((item) => (
                 <Command.Item
                   key={item.href}
-                  value={item.label}
-                  onSelect={() => {
-                    router.push(`/workspaces/${workspaceId}/${item.href}`);
-                    setOpen(false);
-                  }}
+                  value={`page ${item.label}`}
+                  onSelect={() => go(`/workspaces/${workspaceId}/${item.href}`)}
                   className="flex cursor-default items-center gap-2 rounded-[6px] px-3 py-2 text-[13px] data-[selected=true]:bg-muted"
                 >
                   <item.icon size={15} className="text-muted-foreground" />
@@ -165,16 +172,37 @@ function CommandPalette({
               ))}
               <Command.Item
                 value="Dashboard"
-                onSelect={() => {
-                  router.push("/dashboard");
-                  setOpen(false);
-                }}
+                onSelect={() => go("/dashboard")}
                 className="flex cursor-default items-center gap-2 rounded-[6px] px-3 py-2 text-[13px] data-[selected=true]:bg-muted"
               >
                 <LayoutGrid size={15} className="text-muted-foreground" />
                 Dashboard
               </Command.Item>
             </Command.Group>
+            {debounced.length >= 2 ? (
+              <Command.Group heading="Documents">
+                {results.isFetching ? (
+                  <p className="px-3 py-2 text-[11px] text-muted-foreground">Searching…</p>
+                ) : null}
+                {(results.data?.items ?? []).map((item) => (
+                  <Command.Item
+                    key={item.chunk_id}
+                    value={`document ${item.filename} ${item.text}`}
+                    onSelect={() =>
+                      go(
+                        `/workspaces/${workspaceId}/chat?q=${encodeURIComponent(debounced)}`,
+                      )
+                    }
+                    className="flex cursor-default flex-col items-start gap-0.5 rounded-[6px] px-3 py-2 text-[13px] data-[selected=true]:bg-muted"
+                  >
+                    <span className="max-w-full truncate font-medium">{item.filename}</span>
+                    <span className="max-w-full truncate text-[11px] text-muted-foreground">
+                      {item.text}
+                    </span>
+                  </Command.Item>
+                ))}
+              </Command.Group>
+            ) : null}
           </Command.List>
         </Command>
       </DialogContent>
@@ -200,6 +228,19 @@ export function AppShell({
   const active = params.workspaceId;
   const current = workspaceId || active;
   const isActive = (href: string) => pathname.startsWith(href);
+  const [commandOpen, setCommandOpen] = useState(false);
+
+  // One panel for both triggers and the keyboard shortcut.
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setCommandOpen((value) => !value);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   return (
     <div className="min-h-dvh">
@@ -242,41 +283,41 @@ export function AppShell({
         <div className="ml-auto w-40">
           <WorkspaceSelect workspaceId={current} />
         </div>
-        <CommandPalette
-          workspaceId={current}
-          trigger={
-            <Button variant="ghost" size="icon" aria-label="Open command menu">
-              <Search size={16} />
-            </Button>
-          }
-        />
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Open workspace search"
+          onClick={() => setCommandOpen(true)}
+        >
+          <Search size={16} />
+        </Button>
       </header>
 
       <main className={cn(
-        "px-4 md:ml-[220px] md:px-8",
+        "md:ml-[220px]",
         fillViewport
-          ? "flex h-[calc(100dvh-3.5rem)] min-h-0 flex-col pb-[4.5rem] pt-4 md:h-dvh md:pb-3 md:pt-6"
-          : "pb-24 pt-6 md:pb-10 md:pt-8",
+          ? "flex h-[calc(100dvh-3.5rem)] min-h-0 flex-col pb-[4.25rem] md:h-dvh md:pb-3"
+          : "px-4 pb-24 pt-6 md:px-8 md:pb-10 md:pt-8",
       )}>
-        <div className={cn("flex shrink-0 flex-wrap items-end justify-between gap-3", fillViewport ? "mb-3" : "mb-7")}>
+        <div className={cn("flex shrink-0 items-center justify-between gap-3", fillViewport ? "min-h-14 border-b border-border bg-surface/70 px-4 md:px-6" : "mb-6")}>
           <div>
-            <h1 className="text-[22px] font-semibold leading-tight tracking-[-0.025em] md:text-[26px]">
+            <h1 className={cn("font-semibold leading-tight tracking-tight", fillViewport ? "text-lg" : "text-2xl md:text-[26px]")}>
               {title}
             </h1>
             {description ? (
               <p className="mt-1 text-[13px] text-muted-foreground">{description}</p>
             ) : null}
           </div>
-          <CommandPalette
-            workspaceId={current}
-            shortcut
-            trigger={
-              <Button variant="outline" size="sm" className="hidden md:inline-flex">
-                <Search size={13} /> Search
-                <kbd className="ml-1 rounded border border-border px-1 font-mono text-[10px]">⌘K</kbd>
-              </Button>
-            }
-          />
+          <Button
+            variant="outline"
+            size="sm"
+            className="hidden gap-2 rounded-lg px-3 md:inline-flex"
+            aria-label="Open workspace search"
+            onClick={() => setCommandOpen(true)}
+          >
+            <Search size={13} /> Search
+            <kbd className="ml-1 rounded border border-border px-1 font-mono text-[10px]">Ctrl / ⌘ K</kbd>
+          </Button>
         </div>
         {fillViewport ? <div className="min-h-0 flex-1">{children}</div> : children}
       </main>
@@ -302,6 +343,11 @@ export function AppShell({
         })}
       </nav>
 
+      <CommandPalette
+        workspaceId={current}
+        open={commandOpen}
+        onOpenChange={setCommandOpen}
+      />
     </div>
   );
 }

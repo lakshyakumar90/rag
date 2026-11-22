@@ -24,9 +24,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
         description={
           segment === "documents"
             ? "Upload files and watch ingestion finish."
-            : segment === "chat"
-              ? "Ask questions, verify the sources."
-              : undefined
+            : undefined
         }
       >
         {children}

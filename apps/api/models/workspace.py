@@ -31,6 +31,10 @@ class Workspace(BaseModel):
 
     name: Mapped[str] = mapped_column(String(MAX_NAME_LENGTH), nullable=False)
     slug: Mapped[str] = mapped_column(String(MAX_SLUG_LENGTH), nullable=False)
+    # Active embedding profile; replacements are built before this is switched.
+    active_embedding_profile: Mapped[str | None] = mapped_column(
+        String(120), nullable=True
+    )
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="RESTRICT"),

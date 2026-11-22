@@ -11,6 +11,7 @@ This stack provides local infrastructure for the RAG app.
 | Object storage (S3) | `localstack/localstack:latest` | `9000` on host → `4566` in the network | `minio_data` volume; no console port |
 | Bucket init | `localstack/localstack:latest` | — | One-shot container; creates `${MINIO_BUCKET:-rag}` with `aws` after the service is healthy |
 | Ollama | `ollama/ollama:latest` | `11434` | `ollama_data` volume; models persist in volume |
+| Qdrant | `qdrant/qdrant:v1.12.1` | `6333` on loopback | `qdrant_data` volume; `/healthz` readiness; not published in production |
 
 All long-running services have healthchecks. Bucket creation waits for the S3 service to become healthy. MinIO's community images were retired from the public registries, so the stack uses LocalStack's S3 API; the application still talks to it with the MinIO SDK (`MINIO_HOST=minio`, container port `4566`).
 

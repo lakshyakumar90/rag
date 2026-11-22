@@ -14,6 +14,7 @@ from core.middleware import RequestIdMiddleware
 from core.redis import close_redis_client
 from core.security_headers import SecurityHeadersMiddleware
 from providers.embeddings import close_embedding_provider
+from providers.qdrant import close_qdrant_client
 from providers.queue import close_queue_pool, init_queue_pool
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ async def lifespan(app: FastAPI):
     await close_queue_pool()
     await close_embedding_provider()
     await close_redis_client()
+    await close_qdrant_client()
     await dispose_engine()
 
 

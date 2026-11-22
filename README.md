@@ -208,8 +208,15 @@ All settings are read from the environment (and the repo-root `.env`) by `apps/a
 - [Development decisions and history](docs/decisions.md)
 - [Backup and restore](docs/backup.md)
 - [Local Docker Compose reference](docs/docker-compose.md)
+- [Post-v1 phases, backfill and pending stretch goals](docs/v2.md)
 
-## Known limitations (v1)
+## Known limitations (v1 and v2)
+
+The v2 phases (Qdrant, honest indexing progress, Settings tests and the new Chat
+composer) plus per-document permissions and exact-query caching are documented
+in [docs/v2.md](docs/v2.md). Read that file before switching
+`QDRANT_ENABLED=true`; it contains the backfill, verification and rollback
+steps.
 
 The [decision log](docs/decisions.md) and [architecture](docs/architecture.md) track these explicitly:
 
@@ -219,6 +226,21 @@ The [decision log](docs/decisions.md) and [architecture](docs/architecture.md) t
 - The relevance threshold is currently miscalibrated after RRF fusion, so low-confidence abstention does not fire (see [evaluation](docs/evaluation.md)).
 - Citations are parsed from `[n]` markers in answer text rather than stored in a normalized table.
 - Embedding model selection is global, not per workspace; there is no DNS-rebinding guard for BYOK URLs and no orphan-object reconciliation sweep yet.
+
+## Full local stack (including the web UI)
+
+The dev Compose file now builds and runs all seven services: Postgres, Redis,
+S3 storage, Ollama, Qdrant, the FastAPI API, the ARQ worker and the Next.js web
+app. If ports are already taken, override the host ports:
+
+```bash
+API_PORT=18000 OLLAMA_PORT=11435 WEB_PORT=3000 \
+NEXT_PUBLIC_API_BASE_URL=http://localhost:18000/api/v1 \
+docker compose up -d --build
+docker compose ps        # all services healthy
+```
+
+The browser app is served at `http://localhost:3000`.
 
 ## Verification
 

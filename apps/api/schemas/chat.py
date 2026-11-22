@@ -23,6 +23,9 @@ class SourceRef(BaseModel):
     filename: str
     page_number: int | None
     heading_path: list[str] | None
+    # "workspace" citations point at a chunk; "web" citations carry a URL.
+    source_type: str = "workspace"
+    url: str | None = None
 
 
 class Citation(SourceRef):
@@ -33,6 +36,8 @@ class ChatResponse(BaseModel):
     answer: str
     answerable: bool
     provider: str
+    # The model that actually generated this answer (resolved default or override).
+    model: str | None = None
     citations: list[Citation]
     sources: list[SourceRef]
     conversation_id: uuid.UUID | None = None

@@ -126,6 +126,98 @@ class OllamaEmbeddingProvider:
         return normalize(values) if self._settings.embedding_normalize else values
 
 
+class ProfileEmbeddingProvider:
+    """Embedding provider bound to a stored embedding profile."""
+
+    def __init__(self, profile) -> None:
+        self._profile = profile
+        self._delegate: EmbeddingProvider
+        settings = get_settings()
+        if profile.provider == "ollama":
+            self._delegate = OllamaEmbeddingProvider(
+                settings.model_copy(
+                    update={
+                        "ollama_embedding_model": profile.model,
+                        "embedding_dim": profile.dimension,
+                    }
+                )
+            )
+        elif profile.provider in ("openai", "openai-compatible"):
+            self._delegate = OpenAIEmbeddingProvider(profile, settings)
+        else:
+            raise EmbeddingError(f"unsupported embedding provider: {profile.provider}")
+
+    @property
+    def dimension(self) -> int:
+        return int(self._profile.dimension)
+
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        vectors = await self._delegate.embed_documents(texts)
+        return [self._check(vector) for vector in vectors]
+
+    async def embed_query(self, text: str) -> list[float]:
+        return self._check(await self._delegate.embed_query(text))
+
+    def _check(self, vector: list[float]) -> list[float]:
+        if len(vector) != self.dimension:
+            raise EmbeddingError(
+                f"embedding dimension {len(vector)} != profile {self.dimension}"
+            )
+        return vector
+
+    async def close(self) -> None:
+        close = getattr(self._delegate, "close", None)
+        if close:
+            await close()
+
+
+class OpenAIEmbeddingProvider:
+    """OpenAI-compatible `/embeddings` adapter for bring-your-own profiles."""
+
+    def __init__(self, profile, settings: Settings) -> None:
+        config = profile.config_json or {}
+        self._model = profile.model
+        self._dimension = profile.dimension
+
+        self._client = httpx.AsyncClient(
+            base_url=str(config.get("base_url") or settings.openai_base_url).rstrip(
+                "/"
+            ),
+            timeout=settings.embedding_timeout_seconds,
+            headers=(
+                {"Authorization": f"Bearer {config['api_key']}"}
+                if config.get("api_key")
+                else {}
+            ),
+        )
+
+    @property
+    def dimension(self) -> int:
+        return int(self._dimension)
+
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        response = await self._client.post(
+            "/embeddings", json={"model": self._model, "input": texts}
+        )
+        if response.status_code >= 400:
+            raise EmbeddingError(f"embeddings HTTP {response.status_code}")
+        data = response.json()
+        vectors = [item.get("embedding") for item in data.get("data", [])]
+        if len(vectors) != len(texts) or any(vector is None for vector in vectors):
+            raise EmbeddingError("unexpected embeddings response")
+        return [normalize([float(value) for value in vector]) for vector in vectors]
+
+    async def embed_query(self, text: str) -> list[float]:
+        return (await self.embed_documents([text]))[0]
+
+    async def close(self) -> None:
+        await self._client.aclose()
+
+
+def get_profile_embedding_provider(profile) -> EmbeddingProvider:
+    return ProfileEmbeddingProvider(profile)
+
+
 # Process-wide provider used by retrieval and the API dependency.
 _embedding_provider: OllamaEmbeddingProvider | None = None
 

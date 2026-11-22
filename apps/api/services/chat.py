@@ -1,6 +1,7 @@
 """Grounded RAG answering with optional conversation history."""
 
 import asyncio
+import inspect
 import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -11,6 +12,7 @@ from providers.llm.base import LLMProvider
 from providers.llm.registry import create_llm_provider
 from providers.llm.types import ChatMessage, Error, TextDelta, Usage
 from schemas import ChatResponse, Citation, SourceRef
+from services.ai_settings import AISettingsService
 from services.conversations import ConversationService
 from services.retrieval import RetrievalService
 from services.workspaces import WorkspaceContext
@@ -27,6 +29,22 @@ def cancel_stream(conversation_id: uuid.UUID) -> bool:
         return False
     task.cancel()
     return True
+
+
+def _model_options(provider: object, method: str, model: str | None) -> dict[str, str]:
+    """Pass ``model`` only to adapters that accept it (test doubles often don't)."""
+    if not model:
+        return {}
+    function = getattr(provider, method, None)
+    if function is None:
+        return {}
+    parameters = inspect.signature(function).parameters.values()
+    if any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD or parameter.name == "model"
+        for parameter in parameters
+    ):
+        return {"model": model}
+    return {}
 
 
 def _model_name(provider_name: str) -> str | None:
@@ -51,9 +69,37 @@ class ChatService:
         self,
         retrieval: RetrievalService,
         conversations: ConversationService | None = None,
+        defaults: AISettingsService | None = None,
     ) -> None:
         self._retrieval = retrieval
         self._conversations = conversations
+        self._defaults = defaults
+
+    async def _create_provider(self, context: WorkspaceContext, name: str):
+        if name.startswith("config:") and self._defaults is not None:
+            return await self._defaults.provider_for(context.user.id, name)
+        return create_llm_provider(name)
+
+    async def _selection(
+        self,
+        context: WorkspaceContext,
+        provider_name: str | None,
+        model: str | None,
+        conversation,
+    ) -> tuple[str, str | None]:
+        """Resolve provider/model: explicit > conversation > Settings > server."""
+        settings = get_settings()
+        if not provider_name and conversation is not None:
+            provider_name = getattr(conversation, "provider", None)
+            model = model or getattr(conversation, "model", None)
+        if not provider_name and self._defaults is not None:
+            defaults = await self._defaults.get_defaults(context.user.id)
+            provider_name = defaults.provider
+            model = model or defaults.model
+        provider_name = (
+            provider_name or settings.chat_default_provider or settings.llm_provider
+        )
+        return provider_name, model or _model_name(provider_name)
 
     async def answer(
         self,
@@ -63,11 +109,9 @@ class ChatService:
         document_ids: list[uuid.UUID] | None = None,
         provider_name: str | None = None,
         conversation_id: uuid.UUID | None = None,
+        model: str | None = None,
     ) -> ChatResponse:
         settings = get_settings()
-        provider_name = (
-            provider_name or settings.chat_default_provider or settings.llm_provider
-        )
 
         conversation = None
         history = []
@@ -78,10 +122,14 @@ class ChatService:
             conversation = await conversations.get(context, conversation_id)
             history = await conversations.messages(context, conversation_id)
 
+        provider_name, model = await self._selection(
+            context, provider_name, model, conversation
+        )
+
         provider: LLMProvider | None = None
         if conversation is not None:
             assert conversations is not None
-            provider = create_llm_provider(provider_name)
+            provider = await self._create_provider(context, provider_name)
             # Follow-ups ("what about the second one?") need a standalone query.
             effective_query = await conversations.rewrite_query(
                 history, query, provider
@@ -123,11 +171,13 @@ class ChatService:
                     )
                 )
                 if provider is None:
-                    provider = create_llm_provider(provider_name)
+                    provider = await self._create_provider(context, provider_name)
                 started = time.monotonic()
                 try:
                     completion = await provider.complete(
-                        messages, max_tokens=settings.chat_max_tokens
+                        messages,
+                        max_tokens=settings.chat_max_tokens,
+                        **_model_options(provider, "complete", model),
                     )
                 finally:
                     latency = int((time.monotonic() - started) * 1000)
@@ -183,12 +233,14 @@ class ChatService:
                 latency,
                 new_title,
                 answerable=answer_text != "I don't know",
+                model=model,
             )
 
         return ChatResponse(
             answer=answer_text,
             answerable=answer_text != "I don't know",
             provider=provider_name,
+            model=model,
             citations=citations,
             sources=sources,
             conversation_id=conversation_id,
@@ -253,15 +305,9 @@ class ChatService:
     ) -> AsyncIterator[dict]:
         """Yield normalized SSE events, persisting the answer even on disconnect."""
         settings = get_settings()
-        provider_name = (
-            provider_name or settings.chat_default_provider or settings.llm_provider
-        )
         conversations = self._conversations
         conversation = None
         history: list = []
-        model_options = (
-            {"model": model} if model and provider_name.startswith("cli-") else {}
-        )
         provider: LLMProvider | None = None
         collected: list[str] = []
         citations: list[Citation] = []
@@ -282,9 +328,13 @@ class ChatService:
             if task is not None:
                 active_streams[conversation.id] = task
 
+        provider_name, model = await self._selection(
+            context, provider_name, model, conversation
+        )
+
         try:
             if conversation is not None and conversations is not None:
-                provider = create_llm_provider(provider_name, **model_options)
+                provider = await self._create_provider(context, provider_name)
                 effective_query = await conversations.rewrite_query(
                     history, query, provider
                 )
@@ -311,6 +361,8 @@ class ChatService:
                     "citations": [],
                     "answerable": False,
                     "conversation_id": conversation_id,
+                    "provider": provider_name,
+                    "model": model,
                 }
                 return
 
@@ -324,6 +376,8 @@ class ChatService:
                     "citations": [],
                     "answerable": False,
                     "conversation_id": conversation_id,
+                    "provider": provider_name,
+                    "model": model,
                 }
                 return
 
@@ -342,7 +396,7 @@ class ChatService:
             )
             prompt_text = "\n".join(message.content for message in messages)
             if provider is None:
-                provider = create_llm_provider(provider_name, **model_options)
+                provider = await self._create_provider(context, provider_name)
             if (
                 conversation is not None
                 and conversations is not None
@@ -353,7 +407,11 @@ class ChatService:
 
             started = time.monotonic()
             stopped = False
-            stream = provider.stream(messages, max_tokens=settings.chat_max_tokens)
+            stream = provider.stream(
+                messages,
+                max_tokens=settings.chat_max_tokens,
+                **_model_options(provider, "stream", model),
+            )
             try:
                 async for event in stream:
                     if is_disconnected and await is_disconnected():
@@ -407,6 +465,8 @@ class ChatService:
                     "estimated": usage is None,
                 },
                 "conversation_id": conversation_id,
+                "provider": provider_name,
+                "model": model,
             }
         except asyncio.CancelledError:
             final_text = "".join(collected)
@@ -432,7 +492,7 @@ class ChatService:
                     new_title,
                     prompt_text,
                     answerable=final_text != "I don't know",
-                    model=model_options.get("model"),
+                    model=model,
                 )
             if conversation is not None:
                 active_streams.pop(conversation.id, None)

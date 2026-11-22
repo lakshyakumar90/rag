@@ -9,6 +9,8 @@ from arq.connections import RedisSettings
 from core.config import get_settings
 
 INGEST_JOB = "ingest_document"
+PROFILE_SWITCH_JOB = "switch_embedding_profile"
+SOURCE_JOB = "ingest_source"
 
 _pool: ArqRedis | None = None
 
@@ -16,6 +18,16 @@ _pool: ArqRedis | None = None
 class JobQueue(Protocol):
     async def enqueue_ingest(self, document_id: uuid.UUID) -> str | None:
         """Enqueue document ingestion; returns the ARQ job id, if available."""
+        ...
+
+    async def enqueue_profile_switch(
+        self, workspace_id: uuid.UUID, profile_name: str
+    ) -> str | None:
+        """Build a replacement index, then switch the workspace profile."""
+        ...
+
+    async def enqueue_source(self, document_id: uuid.UUID) -> str | None:
+        """Fetch an external source before the normal ingestion pipeline."""
         ...
 
 
@@ -46,4 +58,16 @@ class ArqJobQueue:
 
     async def enqueue_ingest(self, document_id: uuid.UUID) -> str | None:
         job = await self._pool.enqueue_job(INGEST_JOB, str(document_id))
+        return job.job_id if job is not None else None
+
+    async def enqueue_profile_switch(
+        self, workspace_id: uuid.UUID, profile_name: str
+    ) -> str | None:
+        job = await self._pool.enqueue_job(
+            PROFILE_SWITCH_JOB, str(workspace_id), profile_name
+        )
+        return job.job_id if job is not None else None
+
+    async def enqueue_source(self, document_id: uuid.UUID) -> str | None:
+        job = await self._pool.enqueue_job(SOURCE_JOB, str(document_id))
         return job.job_id if job is not None else None

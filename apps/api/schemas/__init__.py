@@ -1,3 +1,28 @@
+from schemas.agent import (
+    AgentRequest,
+    AgentToolEvent,
+    CalculatorInput,
+    CalculatorOutput,
+    DocumentHit,
+    DocumentSearchInput,
+    DocumentSearchOutput,
+    SummarizeInput,
+    SummarizeOutput,
+    ToolCall,
+    WebHit,
+    WebSearchInput,
+    WebSearchOutput,
+)
+from schemas.ai import (
+    AIDefaultsRequest,
+    AIDefaultsResponse,
+    ProviderModelsResponse,
+    ProviderOption,
+    ProviderOptionsResponse,
+    ProviderTestRequest,
+    ProviderTestResponse,
+    TestStatus,
+)
 from schemas.auth import (
     ChangePasswordRequest,
     LoginRequest,
@@ -11,9 +36,22 @@ from schemas.cli import CLIStatusResponse, CLIToolStatusResponse
 from schemas.conversation import (
     ConversationCreate,
     ConversationResponse,
+    ConversationSelectionRequest,
     MessageResponse,
 )
-from schemas.document import DocumentPage, DocumentResponse, DownloadUrlResponse
+from schemas.document import (
+    DocumentPage,
+    DocumentResponse,
+    DownloadUrlResponse,
+    GrantResponse,
+    GrantUpdate,
+)
+from schemas.embeddings import (
+    EmbeddingProfileCreate,
+    EmbeddingProfileResponse,
+    EmbeddingProfileValidation,
+    WorkspaceProfileSwitch,
+)
 from schemas.production import (
     AnalyticsResponse,
     AuditEntryResponse,
@@ -31,6 +69,7 @@ from schemas.provider_config import (
     ProviderType,
 )
 from schemas.retrieval import SearchRequest, SearchResponse, SearchResult
+from schemas.sources import SourceCreate
 from schemas.user import UserResponse, UserUpdate
 from schemas.workspace import (
     InvitationAcceptRequest,
@@ -45,6 +84,12 @@ from schemas.workspace import (
 )
 
 __all__ = [
+    "AgentRequest",
+    "AgentToolEvent",
+    "AIDefaultsRequest",
+    "CalculatorInput",
+    "CalculatorOutput",
+    "AIDefaultsResponse",
     "AnalyticsResponse",
     "AuditEntryResponse",
     "ChangePasswordRequest",
@@ -56,10 +101,19 @@ __all__ = [
     "ConnectionTestResponse",
     "ConversationCreate",
     "ConversationResponse",
+    "ConversationSelectionRequest",
+    "DocumentHit",
     "DocumentPage",
     "DocumentResponse",
+    "DocumentSearchInput",
+    "DocumentSearchOutput",
     "DocumentStat",
+    "EmbeddingProfileCreate",
+    "EmbeddingProfileResponse",
+    "EmbeddingProfileValidation",
     "DownloadUrlResponse",
+    "GrantResponse",
+    "GrantUpdate",
     "InvitationAcceptRequest",
     "InvitationCreate",
     "InvitationCreatedResponse",
@@ -72,13 +126,26 @@ __all__ = [
     "ProviderConfigCreate",
     "ProviderConfigResponse",
     "ProviderConfigUpdate",
+    "ProviderModelsResponse",
+    "ProviderOption",
+    "ProviderOptionsResponse",
+    "ProviderTestRequest",
+    "ProviderTestResponse",
     "ProviderType",
+    "TestStatus",
     "QuestionStat",
     "RoleUpdate",
     "SearchRequest",
     "SearchResponse",
     "SearchResult",
+    "SourceCreate",
     "SourceRef",
+    "SummarizeInput",
+    "SummarizeOutput",
+    "ToolCall",
+    "WebHit",
+    "WebSearchInput",
+    "WebSearchOutput",
     "RefreshRequest",
     "RegisterRequest",
     "TokenPair",
@@ -87,6 +154,7 @@ __all__ = [
     "UserResponse",
     "UserUpdate",
     "WorkspaceCreate",
+    "WorkspaceProfileSwitch",
     "WorkspaceResponse",
     "WorkspaceUpdate",
 ]

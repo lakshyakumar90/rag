@@ -86,6 +86,7 @@ class WorkspaceResponse(BaseModel):
     id: uuid.UUID
     name: str
     slug: str
+    active_embedding_profile: str | None = None
     created_by: uuid.UUID
     my_role: MembershipRole
     created_at: datetime

@@ -4,9 +4,10 @@ import hashlib
 import logging
 import os
 import uuid
+from datetime import UTC, datetime
 from typing import Protocol
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,8 +18,15 @@ from providers.minio import StorageError
 from providers.queue import JobQueue
 from providers.storage import StorageClient
 from repositories import DocumentRepository
-from schemas import DocumentPage, DocumentResponse, DownloadUrlResponse
+from schemas import (
+    DocumentPage,
+    DocumentResponse,
+    DownloadUrlResponse,
+    SourceCreate,
+)
+from schemas.document import DocumentSnippetResponse
 from services.audit import record as record_audit
+from services.document_access import DocumentAccessService
 from services.exceptions import (
     DocumentNotFoundError,
     DuplicateDocumentError,
@@ -26,6 +34,8 @@ from services.exceptions import (
     StorageUnavailableError,
     UnsupportedFileTypeError,
 )
+from services.qdrant_index import QdrantIndexService
+from services.query_cache import QueryCacheService
 from services.workspaces import WorkspaceContext
 
 _READ_CHUNK = 1024 * 1024
@@ -38,11 +48,14 @@ class DocumentService:
         session: AsyncSession,
         storage: StorageClient,
         queue: JobQueue,
+        indexer: QdrantIndexService | None = None,
     ) -> None:
         self._session = session
         self._storage = storage
         self._queue = queue
+        self._indexer = indexer
         self._documents = DocumentRepository(session)
+        self._access = DocumentAccessService(session)
 
     async def upload(
         self,
@@ -58,6 +71,18 @@ class DocumentService:
             detected = detect_file_type(data, extension)
         except ValueError as exc:
             raise UnsupportedFileTypeError(str(exc)) from exc
+
+        source_type = "upload"
+        source_url: str | None = None
+        source_metadata: dict | None = None
+        if extension == ".zip":
+            from services.sources import notion_zip_to_markdown
+
+            converted = notion_zip_to_markdown(data)
+            data = converted.text.encode("utf-8")
+            detected = type(detected)(mime_type=converted.mime_type, extension=".md")
+            source_type = "notion"
+            source_metadata = converted.metadata
 
         sha256 = hashlib.sha256(data).hexdigest()
         for existing in await self._documents.get_by_sha256(workspace_id, sha256):
@@ -75,6 +100,13 @@ class DocumentService:
             sha256=sha256,
             storage_key=storage_key,
             status=DocumentStatus.PENDING,
+            ingestion_stage="queued",
+            source_type=source_type,
+            source_url=source_url,
+            source_metadata=source_metadata,
+            upload_bytes=len(data),
+            upload_total=len(data),
+            embedding_profile=get_settings().embedding_profile,
         )
         await self._documents.add(document, workspace_id)
         try:
@@ -114,7 +146,51 @@ class DocumentService:
             target_id=document.id,
         )
         await self._session.commit()
+        await QueryCacheService(self._session).invalidate_workspace(workspace_id)
         # updated_at has onupdate=func.now() and is expired by the flush.
+        await self._session.refresh(document)
+        return DocumentResponse.model_validate(document)
+
+    async def create_source(
+        self, context: WorkspaceContext, payload: SourceCreate
+    ) -> DocumentResponse:
+        """Create a document placeholder for an external source and enqueue it."""
+        workspace_id = context.workspace.id
+        if payload.type == "url":
+            title = (payload.url or "url").rsplit("/", 1)[-1][:200] or "url"
+            source_url = payload.url
+            metadata: dict = {}
+        else:
+            title = f"{payload.owner}-{payload.repo}"
+            source_url = f"https://github.com/{payload.owner}/{payload.repo}"
+            metadata = {
+                "owner": payload.owner,
+                "repo": payload.repo,
+                "ref": payload.ref,
+                "path": payload.path,
+                "max_depth": payload.max_depth,
+            }
+        document = Document(
+            workspace_id=workspace_id,
+            uploaded_by=context.user.id,
+            filename=f"{title}.md",
+            mime_type="text/markdown",
+            size=0,
+            sha256=uuid.uuid4().hex,
+            storage_key=f"{workspace_id}/source-{uuid.uuid4()}",
+            status=DocumentStatus.PENDING,
+            ingestion_stage="queued",
+            source_type=payload.type,
+            source_url=source_url,
+            source_metadata=metadata,
+            embedding_profile=get_settings().embedding_profile,
+        )
+        await self._documents.add(document, workspace_id)
+        await self._session.commit()
+        try:
+            await self._queue.enqueue_source(document.id)
+        except Exception as exc:
+            logger.error("could not enqueue source %s: %s", document.id, exc)
         await self._session.refresh(document)
         return DocumentResponse.model_validate(document)
 
@@ -126,8 +202,18 @@ class DocumentService:
         status: DocumentStatus | None = None,
     ) -> DocumentPage:
         workspace_id = context.workspace.id
+        role = getattr(context.role, "value", context.role)
+        allowed = await self._access.visible_document_ids(
+            workspace_id, context.user.id, str(role)
+        )
         items = await self._documents.list(workspace_id, skip, limit, status)
-        total = await self._documents.count(workspace_id, status)
+        if allowed is not None:
+            items = [item for item in items if item.id in set(allowed)]
+        total = (
+            len(items)
+            if allowed is not None
+            else await self._documents.count(workspace_id, status)
+        )
         return DocumentPage(items=items, total=total, skip=skip, limit=limit)
 
     async def get(
@@ -136,13 +222,38 @@ class DocumentService:
         document = await self._documents.get(context.workspace.id, document_id)
         if document is None:
             raise DocumentNotFoundError()
+        role = getattr(context.role, "value", context.role)
+        if not await self._access.can_access(
+            context.workspace.id, context.user.id, str(role), document_id
+        ):
+            raise DocumentNotFoundError()
         return DocumentResponse.model_validate(document)
+
+    async def snippet(
+        self, context: WorkspaceContext, document_id: uuid.UUID, chunk_id: uuid.UUID
+    ) -> DocumentSnippetResponse:
+        await self.get(context, document_id)
+        chunk = await self._session.scalar(
+            select(DocumentChunk).where(
+                DocumentChunk.id == chunk_id,
+                DocumentChunk.document_id == document_id,
+                DocumentChunk.workspace_id == context.workspace.id,
+            )
+        )
+        if chunk is None:
+            raise DocumentNotFoundError()
+        return DocumentSnippetResponse(
+            text=chunk.content,
+            page_number=chunk.page_number,
+            heading_path=chunk.heading_path,
+        )
 
     async def delete(self, context: WorkspaceContext, document_id: uuid.UUID) -> None:
         workspace_id = context.workspace.id
         document = await self._documents.get(workspace_id, document_id)
         if document is None:
             raise DocumentNotFoundError()
+        profile = document.embedding_profile
 
         # Remove the object first: if storage fails, keep the row so it can be
         # retried and is never silently orphaned.
@@ -151,6 +262,8 @@ class DocumentService:
         except StorageError as exc:
             raise StorageUnavailableError() from exc
         await self._documents.delete(document, workspace_id)
+        if self._indexer is not None:
+            await self._indexer.delete_document(document_id, profile)
         await record_audit(
             self._session,
             context.user,
@@ -160,6 +273,7 @@ class DocumentService:
             target_id=document_id,
         )
         await self._session.commit()
+        await QueryCacheService(self._session).invalidate_workspace(workspace_id)
 
     async def reindex(
         self, context: WorkspaceContext, document_id: uuid.UUID
@@ -169,6 +283,7 @@ class DocumentService:
         document = await self._documents.get(workspace_id, document_id)
         if document is None:
             raise DocumentNotFoundError()
+        profile = document.embedding_profile
 
         # The DB lookup above is workspace-scoped, so this cannot touch another
         # tenant's chunks.
@@ -180,10 +295,15 @@ class DocumentService:
         )
         document.status = DocumentStatus.PENDING
         document.error = None
-        document.ingestion_stage = None
+        document.ingestion_stage = "queued"
         document.chunks_embedded = 0
         document.chunks_total = 0
         document.chunks_done = 0
+        document.chunks_indexed = 0
+        document.pages_done = 0
+        document.ocr_pages_done = 0
+        document.sections_done = 0
+        document.progress_updated_at = datetime.now(UTC)
         await record_audit(
             self._session,
             context.user,
@@ -193,7 +313,10 @@ class DocumentService:
             target_id=document_id,
         )
         await self._session.commit()
+        await QueryCacheService(self._session).invalidate_workspace(workspace_id)
 
+        if self._indexer is not None:
+            await self._indexer.delete_document(document_id, profile)
         try:
             await self._queue.enqueue_ingest(document.id)
         except Exception as exc:
@@ -209,6 +332,11 @@ class DocumentService:
         workspace_id = context.workspace.id
         document = await self._documents.get(workspace_id, document_id)
         if document is None:
+            raise DocumentNotFoundError()
+        role = getattr(context.role, "value", context.role)
+        if not await self._access.can_access(
+            workspace_id, context.user.id, str(role), document_id
+        ):
             raise DocumentNotFoundError()
         ttl = get_settings().presigned_url_ttl_seconds
         try:

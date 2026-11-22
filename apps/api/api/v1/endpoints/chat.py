@@ -76,6 +76,7 @@ async def chat_complete(
         payload.document_ids,
         payload.provider,
         payload.conversation_id,
+        model=payload.model,
     )
 
 

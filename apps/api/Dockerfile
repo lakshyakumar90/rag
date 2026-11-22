@@ -23,6 +23,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ---- runtime: minimal image, non-root ----
 FROM python:3.12-slim AS runtime
 
+# OCR engine for scanned PDF pages; language packs are configurable at runtime.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --system app && useradd --system --gid app --create-home app
 
 WORKDIR /app/apps/api

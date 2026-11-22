@@ -43,23 +43,10 @@ class DocumentRepository:
         limit: int,
         status: DocumentStatus | None,
     ) -> list[DocumentResponse]:
+        # Select the full entity: the progress/profile/grant fields must reach
+        # the client, not just the original v1 column subset.
         statement = (
-            select(
-                Document.id,
-                Document.workspace_id,
-                Document.uploaded_by,
-                Document.filename,
-                Document.mime_type,
-                Document.size,
-                Document.sha256,
-                Document.status,
-                Document.error,
-                Document.page_count,
-                Document.chunks_done,
-                Document.chunks_total,
-                Document.created_at,
-                Document.updated_at,
-            )
+            select(Document)
             .where(Document.workspace_id == workspace_id)
             .order_by(Document.created_at.desc(), Document.id.desc())
             .offset(skip)
@@ -68,7 +55,10 @@ class DocumentRepository:
         if status is not None:
             statement = statement.where(Document.status == status)
         result = await self._session.execute(statement)
-        return [DocumentResponse.model_validate(row) for row in result.all()]
+        return [
+            DocumentResponse.model_validate(document)
+            for document in result.scalars().all()
+        ]
 
     async def count(
         self, workspace_id: uuid.UUID, status: DocumentStatus | None

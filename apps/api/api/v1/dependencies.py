@@ -9,21 +9,26 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.database import get_session
+from core.database import SessionFactory, get_session
 from core.rate_limit import LoginRateLimiter, UserRateLimiter
 from core.redis import get_redis_client
 from models import MembershipRole, User
 from providers.embeddings import EmbeddingProvider, get_embedding_provider
 from providers.minio import MinioStorageClient
+from providers.qdrant import shared_qdrant_client
 from providers.queue import ArqJobQueue, JobQueue, get_arq_pool
 from providers.rerank import Reranker
 from providers.storage import StorageClient
 from services import (
     AccountService,
+    AgentService,
+    AISettingsService,
     AuthService,
     ChatService,
     ConversationService,
+    DocumentAccessService,
     DocumentService,
+    EmbeddingProfileService,
     FeedbackService,
     ProviderConfigService,
     RetrievalService,
@@ -36,6 +41,7 @@ from services.exceptions import (
     InvalidAccessTokenError,
     OwnerRequiredError,
 )
+from services.qdrant_index import QdrantIndexService
 from services.workspaces import WorkspaceContext
 
 # auto_error=False so a missing/malformed header produces our own structured
@@ -87,12 +93,28 @@ def get_job_queue() -> JobQueue:
     return ArqJobQueue(get_arq_pool())
 
 
+async def get_qdrant_indexer() -> QdrantIndexService | None:
+    """Shared Qdrant indexer, or None while the backfill is not enabled."""
+    from core.config import get_settings
+
+    if not get_settings().qdrant_enabled:
+        return None
+    return QdrantIndexService(await shared_qdrant_client(), SessionFactory)
+
+
 def get_document_service(
     session: Annotated[AsyncSession, Depends(get_session)],
     storage: Annotated[StorageClient, Depends(get_storage_client)],
     queue: Annotated[JobQueue, Depends(get_job_queue)],
+    indexer: Annotated[QdrantIndexService | None, Depends(get_qdrant_indexer)],
 ) -> DocumentService:
-    return DocumentService(session, storage, queue)
+    return DocumentService(session, storage, queue, indexer)
+
+
+def get_document_access_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> DocumentAccessService:
+    return DocumentAccessService(session)
 
 
 def get_provider_config_service(
@@ -109,8 +131,9 @@ def get_retrieval_service(
     session: Annotated[AsyncSession, Depends(get_session)],
     embeddings: Annotated[EmbeddingProvider, Depends(get_embedding_provider)],
     reranker: Annotated[Reranker, Depends(get_reranker)],
+    indexer: Annotated[QdrantIndexService | None, Depends(get_qdrant_indexer)],
 ) -> RetrievalService:
-    return RetrievalService(session, embeddings, reranker)
+    return RetrievalService(session, embeddings, reranker, indexer)
 
 
 def get_conversation_service(
@@ -119,11 +142,34 @@ def get_conversation_service(
     return ConversationService(session)
 
 
+def get_embedding_profile_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    queue: Annotated[JobQueue, Depends(get_job_queue)],
+    indexer: Annotated[QdrantIndexService | None, Depends(get_qdrant_indexer)],
+) -> EmbeddingProfileService:
+    return EmbeddingProfileService(session, queue, indexer)
+
+
+def get_ai_settings_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> AISettingsService:
+    return AISettingsService(session)
+
+
 def get_chat_service(
     retrieval: Annotated[RetrievalService, Depends(get_retrieval_service)],
     conversations: Annotated[ConversationService, Depends(get_conversation_service)],
+    defaults: Annotated[AISettingsService, Depends(get_ai_settings_service)],
 ) -> ChatService:
-    return ChatService(retrieval, conversations)
+    return ChatService(retrieval, conversations, defaults)
+
+
+def get_agent_service(
+    retrieval: Annotated[RetrievalService, Depends(get_retrieval_service)],
+    defaults: Annotated[AISettingsService, Depends(get_ai_settings_service)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> AgentService:
+    return AgentService(session, retrieval, defaults)
 
 
 def get_feedback_service(

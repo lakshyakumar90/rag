@@ -7,6 +7,12 @@ from core.exceptions import DomainError
 _BEARER_HEADER = {"WWW-Authenticate": "Bearer"}
 
 
+class VectorIndexUnavailableError(DomainError):
+    status_code = 503
+    code = "VECTOR_INDEX_UNAVAILABLE"
+    message = "The vector index is temporarily unavailable"
+
+
 class EmailAlreadyExistsError(DomainError):
     status_code = 409
     code = "EMAIL_ALREADY_REGISTERED"

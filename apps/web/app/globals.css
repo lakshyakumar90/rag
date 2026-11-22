@@ -127,6 +127,18 @@
   .hairline {
     border-bottom: 1px solid var(--border);
   }
+  /* Unknown totals get a moving segment, never an invented percentage. */
+  .progress-indeterminate {
+    animation: progress-indeterminate 1.4s ease-in-out infinite;
+  }
+  @keyframes progress-indeterminate {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(320%);
+    }
+  }
 }
 
 @media (pointer: coarse) {
@@ -140,7 +152,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .result-in {
+  .result-in,
+  .progress-indeterminate {
     animation: none;
   }
   *,

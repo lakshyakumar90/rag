@@ -15,6 +15,8 @@ export type ChatEvent =
       citations: SourceRef[];
       tokens?: { input: number; output: number; estimated: boolean };
       conversation_id?: string;
+      provider?: string;
+      model?: string | null;
     }
   | { type: "error"; message: string };
 

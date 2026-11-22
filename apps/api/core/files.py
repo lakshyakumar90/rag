@@ -13,6 +13,8 @@ ALLOWED_TYPES: dict[str, str] = {
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".txt": "text/plain",
     ".md": "text/markdown",
+    # Notion exports arrive as ZIP archives and are parsed in a bounded helper.
+    ".zip": "application/zip",
 }
 
 _SAFE_NAME_CHARS = re.compile(r"[^A-Za-z0-9._\- ]+")
@@ -53,6 +55,15 @@ def detect_file_type(data: bytes, extension: str) -> DetectedType:
     if expected == "application/pdf":
         if not data.startswith(b"%PDF-"):
             raise ValueError("File content is not a PDF (missing %PDF- header)")
+    elif extension == ".zip":
+        if not data.startswith(b"PK\x03\x04"):
+            raise ValueError("File content is not a ZIP archive")
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                if archive.testzip() is not None:
+                    raise ValueError("ZIP archive is corrupt")
+        except (zipfile.BadZipFile, OSError) as exc:
+            raise ValueError("File content is not a valid ZIP archive") from exc
     elif extension == ".docx":
         if not data.startswith(b"PK\x03\x04"):
             raise ValueError("File content is not a DOCX (missing ZIP header)")

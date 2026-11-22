@@ -33,15 +33,36 @@ class ConversationService:
         self._conversations = ConversationRepository(session)
 
     async def create(
-        self, context: WorkspaceContext, title: str | None = None
+        self,
+        context: WorkspaceContext,
+        title: str | None = None,
+        provider: str | None = None,
+        model: str | None = None,
     ) -> ConversationResponse:
         conversation = Conversation(
             workspace_id=context.workspace.id,
             user_id=context.user.id,
             title=(title or "").strip()[:200] or _FALLBACK_TITLE,
+            provider=provider or None,
+            model=model or None,
         )
         await self._conversations.add(conversation)
         await self._session.commit()
+        return ConversationResponse.model_validate(conversation)
+
+    async def set_selection(
+        self,
+        context: WorkspaceContext,
+        conversation_id: uuid.UUID,
+        provider: str | None,
+        model: str | None,
+    ) -> ConversationResponse:
+        """Persist a per-conversation provider/model override."""
+        conversation = await self.get(context, conversation_id)
+        conversation.provider = provider or None
+        conversation.model = model or None
+        await self._session.commit()
+        await self._session.refresh(conversation)
         return ConversationResponse.model_validate(conversation)
 
     async def list_for_user(

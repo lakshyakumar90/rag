@@ -14,6 +14,7 @@ from schemas import (
     ChatResponse,
     ConversationCreate,
     ConversationResponse,
+    ConversationSelectionRequest,
     MessageResponse,
 )
 from services import ChatService, ConversationService
@@ -33,7 +34,7 @@ async def create_conversation(
     context: MemberContext,
     service: Annotated[ConversationService, Depends(get_conversation_service)],
 ) -> ConversationResponse:
-    return await service.create(context, payload.title)
+    return await service.create(context, payload.title, payload.provider, payload.model)
 
 
 @router.get(
@@ -88,6 +89,22 @@ async def rename_conversation(
     service: Annotated[ConversationService, Depends(get_conversation_service)],
 ) -> ConversationResponse:
     return await service.rename(context, conversation_id, payload.title or "")
+
+
+@router.patch(
+    "/{workspace_id}/conversations/{conversation_id}/selection",
+    response_model=ConversationResponse,
+    summary="Override the provider/model used by this conversation",
+)
+async def set_selection(
+    conversation_id: uuid.UUID,
+    payload: ConversationSelectionRequest,
+    context: MemberContext,
+    service: Annotated[ConversationService, Depends(get_conversation_service)],
+) -> ConversationResponse:
+    return await service.set_selection(
+        context, conversation_id, payload.provider, payload.model
+    )
 
 
 @router.post(

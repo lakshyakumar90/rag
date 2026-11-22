@@ -72,6 +72,52 @@ class Settings(BaseSettings):
         default=True, validation_alias="EMBEDDING_NORMALIZE"
     )
 
+    # Qdrant vector storage. Reads stay on PostgreSQL until a backfill has been
+    # verified; set QDRANT_ENABLED=true after the backfill check passes.
+    qdrant_enabled: bool = Field(default=False, validation_alias="QDRANT_ENABLED")
+    qdrant_url: str = Field(
+        default="http://localhost:6333", validation_alias="QDRANT_URL"
+    )
+    qdrant_api_key: str | None = Field(default=None, validation_alias="QDRANT_API_KEY")
+    qdrant_timeout_seconds: float = Field(
+        default=30.0, validation_alias="QDRANT_TIMEOUT_SECONDS"
+    )
+    qdrant_collection_prefix: str = Field(
+        default="rag_chunks", validation_alias="QDRANT_COLLECTION_PREFIX"
+    )
+    # Identity of the active embedding profile. Incompatible profiles must use
+    # different ids, which also selects a different Qdrant collection.
+    embedding_profile: str = Field(
+        default="ollama-embeddinggemma-768-v1", validation_alias="EMBEDDING_PROFILE"
+    )
+    qdrant_batch_size: int = Field(default=64, validation_alias="QDRANT_BATCH_SIZE")
+    qdrant_fallback_to_pgvector: bool = Field(
+        default=True, validation_alias="QDRANT_FALLBACK_TO_PGVECTOR"
+    )
+    query_cache_enabled: bool = Field(
+        default=True, validation_alias="QUERY_CACHE_ENABLED"
+    )
+    # Semantic cache: a hit requires cosine similarity >= this threshold, the
+    # same embedding profile, workspace, authorization scope and TTL.
+    semantic_cache_enabled: bool = Field(
+        default=False, validation_alias="SEMANTIC_CACHE_ENABLED"
+    )
+    semantic_cache_threshold: float = Field(
+        default=0.92, validation_alias="SEMANTIC_CACHE_THRESHOLD"
+    )
+
+    # Agent mode. Web search is opt-in: a URL template receiving {query}.
+    agent_web_search_url: str | None = Field(
+        default=None, validation_alias="AGENT_WEB_SEARCH_URL"
+    )
+    agent_web_search_timeout_seconds: float = Field(
+        default=10.0, validation_alias="AGENT_WEB_SEARCH_TIMEOUT_SECONDS"
+    )
+    agent_max_web_chars: int = Field(
+        default=4000, validation_alias="AGENT_MAX_WEB_CHARS"
+    )
+    agent_max_steps: int = Field(default=4, validation_alias="AGENT_MAX_STEPS")
+
     # LLM providers (chat/rag phase)
     llm_provider: str = Field(default="ollama", validation_alias="LLM_PROVIDER")
     ollama_llm_model: str = Field(
@@ -250,6 +296,12 @@ class Settings(BaseSettings):
     chunk_insert_batch_size: int = Field(
         default=100, validation_alias="CHUNK_INSERT_BATCH_SIZE"
     )
+
+    # OCR for scanned PDF pages.
+    ocr_enabled: bool = Field(default=True, validation_alias="OCR_ENABLED")
+    ocr_language: str = Field(default="eng", validation_alias="OCR_LANGUAGE")
+    ocr_min_text_chars: int = Field(default=40, validation_alias="OCR_MIN_TEXT_CHARS")
+    ocr_dpi: int = Field(default=200, validation_alias="OCR_DPI")
 
     # CORS (comma-separated origins, e.g. "http://localhost:3000,https://app.example.com")
     cors_origins: str = Field(default="", validation_alias="CORS_ORIGINS")
