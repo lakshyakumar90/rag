@@ -4,9 +4,9 @@ version = "0.1.0"
 description = "RAG monorepo (Python components)"
 requires-python = ">=3.12"
 dependencies = [
-  "fastapi>=0.115.0",
+  "fastapi>=0.165.0",
   "pydantic>=2.0",
-  "pydantic-settings>=2.0",
+  "pydantic-settings>=2.16.3",
   "sqlalchemy[asyncio]>=2.0",
   "psycopg[binary]>=3.2",
   "uvicorn>=0.30.0",
@@ -30,7 +30,7 @@ dependencies = [
 [dependency-groups]
 dev = [
   "pre-commit>=4.0.0",
-  "ruff>=0.15.0",
+  "ruff>=0.17.5",
   "mypy>=1.20.0",
   "pytest>=8.0",
   "pytest-asyncio>=0.24",
