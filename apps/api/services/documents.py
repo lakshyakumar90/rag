@@ -131,7 +131,13 @@ class DocumentService:
         # outage leaves the document pending for a later recovery sweep; it does
         # not undo a successfully stored file.
         try:
-            await self._queue.enqueue_ingest(document.id)
+            from workers.ocr import is_scanned_pdf
+
+            needs_ocr = is_scanned_pdf(data, detected.mime_type)
+            try:
+                await self._queue.enqueue_ingest(document.id, needs_ocr=needs_ocr)
+            except TypeError:
+                await self._queue.enqueue_ingest(document.id)
         except Exception as exc:
             logger.error(
                 "could not enqueue ingestion for document %s: %s", document.id, exc

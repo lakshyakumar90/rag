@@ -122,3 +122,95 @@ def test_unreadable_page_is_reported(monkeypatch) -> None:
 def test_corrupt_pdf_raises_domain_error() -> None:
     with pytest.raises(ExtractionError):
         extract(b"not a pdf at all", "application/pdf")
+
+
+def test_queue_isolation_routes_scanned_pdf_to_ocr_and_markdown_to_fast() -> None:
+    from providers.queue import INGEST_FAST_QUEUE, INGEST_OCR_QUEUE
+    from workers.ocr import is_scanned_pdf
+    from workers.settings import FastWorkerSettings, OcrWorkerSettings
+
+    assert FastWorkerSettings.queue_name == INGEST_FAST_QUEUE
+    assert OcrWorkerSettings.queue_name == INGEST_OCR_QUEUE
+    assert OcrWorkerSettings.max_jobs <= FastWorkerSettings.max_jobs
+
+    assert is_scanned_pdf(b"# Fast Markdown\nHello world", "text/markdown") is False
+    assert (
+        is_scanned_pdf(
+            _text_pdf(["Plenty of selectable text on this page for fast ingestion."]),
+            "application/pdf",
+        )
+        is False
+    )
+    assert (
+        is_scanned_pdf(_scanned_pdf(["Scanned invoice table"]), "application/pdf")
+        is True
+    )
+
+
+def test_low_confidence_ocr_triggers_vision_fallback(monkeypatch) -> None:
+    from workers import ocr as ocr_mod
+
+    monkeypatch.setattr(
+        ocr_mod,
+        "_tesseract_with_confidence",
+        lambda image, language: ("garbled table ###", 38.5),
+    )
+    monkeypatch.setattr(
+        ocr_mod,
+        "_vision_extract_markdown",
+        lambda png_bytes, model: "| Item | Amount |\n| --- | --- |\n| Widget | $42 |",
+    )
+
+    doc = pymupdf.open(stream=_scanned_pdf(["Widget $42"]), filetype="pdf")
+    try:
+        res = ocr_mod.ocr_page_detailed(
+            doc[0],
+            language="eng",
+            dpi=150,
+            min_confidence=65.0,
+            vision_model="gpt-4o-mini",
+        )
+        assert res.used_vision_fallback is True
+        assert res.mean_confidence == pytest.approx(38.5)
+        assert "| Widget | $42 |" in res.text
+    finally:
+        doc.close()
+
+
+def test_high_confidence_ocr_skips_vision_fallback(monkeypatch) -> None:
+    from workers import ocr as ocr_mod
+
+    monkeypatch.setattr(
+        ocr_mod,
+        "_tesseract_with_confidence",
+        lambda image, language: ("Clean high confidence text", 91.2),
+    )
+
+    def fail_vision(*args, **kwargs):
+        raise AssertionError("Vision fallback should not run on high confidence OCR")
+
+    monkeypatch.setattr(ocr_mod, "_vision_extract_markdown", fail_vision)
+
+    doc = pymupdf.open(stream=_scanned_pdf(["Clean text"]), filetype="pdf")
+    try:
+        res = ocr_mod.ocr_page_detailed(
+            doc[0],
+            language="eng",
+            dpi=150,
+            min_confidence=65.0,
+            vision_model="gpt-4o-mini",
+        )
+        assert res.used_vision_fallback is False
+        assert res.text == "Clean high confidence text"
+    finally:
+        doc.close()
+
+
+def test_multilingual_and_code_fts_sql_uses_simple_and_trgm() -> None:
+    import inspect
+
+    from repositories.retrieval import RetrievalRepository
+
+    source = inspect.getsource(RetrievalRepository.keyword_search)
+    assert "websearch_to_tsquery('simple', :query)" in source
+    assert "similarity(dc.content, :query)" in source

@@ -205,12 +205,32 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  # Shares the API image; consumes ingest_document jobs from the same Redis.
+  # Fast ingestion worker: consumes TXT, MD, DOCX, text PDFs from ingest-fast.
   worker:
     build: *api-build
     image: rag-api:local
     environment: *api-env
-    command: ["arq", "workers.settings.WorkerSettings"]
+    command: ["arq", "workers.settings.FastWorkerSettings"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      qdrant:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Dedicated CPU/memory-bounded worker for scanned PDF OCR (ingest-ocr queue).
+  worker-ocr:
+    build: *api-build
+    image: rag-api:local
+    environment: *api-env
+    command: ["arq", "workers.settings.OcrWorkerSettings"]
+    mem_limit: 2g
     depends_on:
       postgres:
         condition: service_healthy

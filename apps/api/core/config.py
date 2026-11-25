@@ -293,6 +293,9 @@ class Settings(BaseSettings):
         default=300.0, validation_alias="INGEST_JOB_TIMEOUT_SECONDS"
     )
     worker_max_jobs: int = Field(default=10, validation_alias="WORKER_MAX_JOBS")
+    worker_ocr_max_jobs: int = Field(
+        default=2, validation_alias="WORKER_OCR_MAX_JOBS"
+    )
 
     # Chunking (500 tokens with 50-token overlap by default)
     chunk_target_tokens: int = Field(
@@ -322,6 +325,13 @@ class Settings(BaseSettings):
     ocr_language: str = Field(default="eng", validation_alias="OCR_LANGUAGE")
     ocr_min_text_chars: int = Field(default=40, validation_alias="OCR_MIN_TEXT_CHARS")
     ocr_dpi: int = Field(default=200, validation_alias="OCR_DPI")
+    ocr_min_confidence: float = Field(
+        default=65.0, validation_alias="OCR_MIN_CONFIDENCE"
+    )
+    ocr_vision_model: str | None = Field(
+        default=None, validation_alias="OCR_VISION_MODEL"
+    )
+    fts_config: str = Field(default="simple", validation_alias="FTS_CONFIG")
 
     # CORS (comma-separated origins, e.g. "http://localhost:3000,https://app.example.com")
     cors_origins: str = Field(default="", validation_alias="CORS_ORIGINS")

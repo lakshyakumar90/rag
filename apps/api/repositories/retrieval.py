@@ -197,14 +197,20 @@ class RetrievalRepository:
             f"""
             SELECT dc.id, dc.document_id, d.filename, dc.content, dc.page_number,
                    dc.heading_path,
-                   ts_rank_cd(dc.search_vector,
-                              websearch_to_tsquery('english', :query)) AS score,
+                   GREATEST(
+                       ts_rank_cd(dc.search_vector,
+                                  websearch_to_tsquery('simple', :query)),
+                       similarity(dc.content, :query)
+                   ) AS score,
                    dc.parent_content, dc.context_header, dc.char_start, dc.char_end
             FROM document_chunks dc
             JOIN documents d ON d.id = dc.document_id
             WHERE dc.workspace_id = :workspace_id
               AND d.status = :ready
-              AND dc.search_vector @@ websearch_to_tsquery('english', :query)
+              AND (
+                  dc.search_vector @@ websearch_to_tsquery('simple', :query)
+                  OR similarity(dc.content, :query) > 0.15
+              )
               {clause}
             ORDER BY score DESC
             LIMIT :limit
