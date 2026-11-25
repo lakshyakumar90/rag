@@ -28,6 +28,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { RowSkeleton } from "../../../../components/ui/skeleton";
 import { Badge } from "../../../../components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../../../../components/ui/dialog";
+import { ConfidenceBadge, type ConfidenceBreakdown } from "../../../../components/confidence-badge";
+import { CitationSplitViewer } from "../../../../components/citation-split-viewer";
+import { RetrievalInspectorDrawer, type RetrievalDiagnostics } from "../../../../components/retrieval-inspector-drawer";
 import {
   api,
   type Conversation,
@@ -55,6 +58,10 @@ type DisplayMessage = {
   provider?: string | null;
   model?: string | null;
   streaming?: boolean;
+  confidenceScore?: number | null;
+  confidenceLevel?: string | null;
+  confidenceBreakdown?: ConfidenceBreakdown | null;
+  retrievalDiagnostics?: RetrievalDiagnostics | null;
 };
 
 function lastAssistantIndex(messages: DisplayMessage[]): number {
@@ -88,6 +95,7 @@ export default function ChatPage() {
   const [toolActivity, setToolActivity] = useState<Record<string, ToolActivity[]>>({});
   const [editingModel, setEditingModel] = useState(false);
   const [activeSource, setActiveSource] = useState<SourceRef | null>(null);
+  const [inspectorDiagnostics, setInspectorDiagnostics] = useState<RetrievalDiagnostics | null>(null);
   const snippet = useQuery({
     queryKey: ["citation-snippet", workspaceId, activeSource?.document_id, activeSource?.chunk_id],
     queryFn: () => api.documentSnippet(workspaceId, activeSource!.document_id, activeSource!.chunk_id),
@@ -331,7 +339,21 @@ export default function ChatPage() {
               : message,
           ),
         );
-      } else if (event.type === "done") {
+      } else if (event.type === "confidence") {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? {
+                      ...m,
+                      confidenceScore: event.confidence_score,
+                      confidenceLevel: event.confidence_level,
+                      confidenceBreakdown: (event.confidence_breakdown ?? null) as ConfidenceBreakdown | null,
+                      retrievalDiagnostics: (event.retrieval_diagnostics ?? null) as RetrievalDiagnostics | null,
+                    }
+                  : m,
+              ),
+            );
+          } else if (event.type === "done") {
         setMessages((current) =>
           current.map((message) =>
             message.id === assistantId
@@ -662,7 +684,7 @@ export default function ChatPage() {
                         votes[message.id] === "up" ? "text-accent" : ""
                       }`}
                     >
-                      <ThumbsUp size={13} />
+                      <ConfidenceBadge level={message.confidenceLevel} score={message.confidenceScore} breakdown={message.confidenceBreakdown} />{message.retrievalDiagnostics ? (<Button type="button" size="sm" variant="ghost" className="h-6 px-1.5 text-[11px]" onClick={() => setInspectorDiagnostics(message.retrievalDiagnostics ?? null)}>Inspect</Button>) : null}<ThumbsUp size={13} />
                     </button>
                     <button
                       type="button"
@@ -786,37 +808,24 @@ export default function ChatPage() {
         </div>
       </section>
 
-      <Dialog
-        open={Boolean(activeSource)}
-        onOpenChange={(open) => {
-          if (!open) setActiveSource(null);
-        }}
-      >
-        <DialogContent side="right" className="flex w-[min(100vw,34rem)] flex-col p-0">
-          <header className="shrink-0 border-b border-border px-5 pb-4 pt-5 pr-12">
-            <DialogTitle className="text-base font-semibold">Source passage {activeSource ? `[${activeSource.number}]` : ""}</DialogTitle>
-            <DialogDescription className="mt-1 [overflow-wrap:anywhere] text-sm leading-6 text-muted-foreground">
-              {activeSource?.filename}
-            </DialogDescription>
-          </header>
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
-            {snippet.isPending ? <RowSkeleton lines={4} /> : snippet.isError ? (
-              <div className="space-y-3">
-                <p role="status" className="text-sm text-muted-foreground">This passage could not be loaded. The document may have been re-indexed or your access may have changed.</p>
-                <Button size="sm" variant="outline" onClick={() => void snippet.refetch()}>Try again</Button>
-              </div>
-            ) : snippet.data ? (
-              <>
-                {snippet.data.page_number && <Badge tone="accent">Page {snippet.data.page_number}</Badge>}
-                {snippet.data.heading_path?.length ? <p className="my-2 text-xs leading-relaxed text-muted-foreground">{snippet.data.heading_path.join(" / ")}</p> : null}
-                <blockquote className="mt-4 whitespace-pre-wrap [overflow-wrap:anywhere] rounded-xl border border-border bg-surface p-4 text-[14px] leading-7">
-                  {snippet.data.text}
-                </blockquote>
-              </>
-            ) : null}
-          </div>
-        </DialogContent>
-      </Dialog>
+      {activeSource ? (
+        <div className="fixed inset-y-0 right-0 z-30 w-full max-w-xl shadow-2xl">
+          <CitationSplitViewer
+            source={activeSource}
+            snippet={snippet.data}
+            isPending={snippet.isPending}
+            isError={snippet.isError}
+            onRetry={() => void snippet.refetch()}
+            onClose={() => setActiveSource(null)}
+          />
+        </div>
+      ) : null}
+
+      <RetrievalInspectorDrawer
+        open={Boolean(inspectorDiagnostics)}
+        diagnostics={inspectorDiagnostics}
+        onClose={() => setInspectorDiagnostics(null)}
+      />
 
       <Dialog
         open={Boolean(commentTarget)}

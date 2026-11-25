@@ -34,6 +34,84 @@ export type AIDefaults = S["AIDefaultsResponse"];
 export type ProviderTest = S["ProviderTestResponse"];
 export type ProviderModels = S["ProviderModelsResponse"];
 
+export type EvalDataset = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  description?: string | null;
+  case_count: number;
+  created_at: string;
+};
+
+export type EvalCase = {
+  id: string;
+  dataset_id: string;
+  workspace_id: string;
+  question: string;
+  expected_answer?: string | null;
+  expected_document_ids?: string[] | null;
+  expected_chunk_ids?: string[] | null;
+  source_message_id?: string | null;
+  created_at: string;
+};
+
+export type EvalRun = {
+  id: string;
+  dataset_id: string;
+  workspace_id: string;
+  status: string;
+  top_k: number;
+  total_cases: number;
+  completed_cases: number;
+  recall_at_k?: number | null;
+  mrr?: number | null;
+  ndcg_at_k?: number | null;
+  faithfulness?: number | null;
+  answer_relevancy?: number | null;
+  citation_accuracy?: number | null;
+  error?: string | null;
+  created_at: string;
+  completed_at?: string | null;
+};
+
+export type EvalResultItem = {
+  id: string;
+  run_id: string;
+  case_id: string;
+  question: string;
+  generated_answer?: string | null;
+  recall_at_k?: number | null;
+  mrr?: number | null;
+  ndcg_at_k?: number | null;
+  faithfulness?: number | null;
+  answer_relevancy?: number | null;
+  citation_accuracy?: number | null;
+  judge_reasoning?: Record<string, unknown> | null;
+  passed: boolean;
+  latency_ms?: number | null;
+};
+
+export type EvalRunDetail = EvalRun & {
+  results: EvalResultItem[];
+  failures: EvalResultItem[];
+};
+
+export type MemoryTier = "semantic" | "episodic" | "procedural";
+
+export type MemoryItem = {
+  id: string;
+  workspace_id: string;
+  user_id?: string | null;
+  tier: MemoryTier;
+  content: string;
+  status: "active" | "superseded";
+  superseded_by_id?: string | null;
+  confidence: number;
+  created_at: string;
+  updated_at: string;
+};
+
+
 /** Static (parameterless) path, checked against the generated schema. */
 export function request<T>(path: keyof paths, init?: RequestInit): Promise<T> {
   return apiRequest<T>(path as string, init);
@@ -257,4 +335,92 @@ export const api = {
       `/api/v1/workspaces/${workspaceId}/export`,
     ),
   deleteAccount: () => apiRequest<void>("/api/v1/account", { method: "DELETE" }),
+
+  // Evaluation engine
+  listEvalDatasets: (workspaceId: string) =>
+    requestPath<EvalDataset[]>(`/api/v1/workspaces/${workspaceId}/evals/datasets`),
+  createEvalDataset: (
+    workspaceId: string,
+    body: { name: string; description?: string },
+  ) =>
+    apiRequest<EvalDataset>(
+      `/api/v1/workspaces/${workspaceId}/evals/datasets`,
+      json(body),
+    ),
+  addEvalCase: (
+    workspaceId: string,
+    datasetId: string,
+    body: {
+      question: string;
+      expected_answer?: string;
+      expected_document_ids?: string[];
+    },
+  ) =>
+    apiRequest<EvalCase>(
+      `/api/v1/workspaces/${workspaceId}/evals/datasets/${datasetId}/cases`,
+      json(body),
+    ),
+  triggerEvalRun: (
+    workspaceId: string,
+    datasetId: string,
+    body: { top_k?: number; run_async?: boolean } = {},
+  ) =>
+    apiRequest<EvalRun>(
+      `/api/v1/workspaces/${workspaceId}/evals/datasets/${datasetId}/runs`,
+      json(body),
+    ),
+  listEvalRuns: (workspaceId: string) =>
+    requestPath<EvalRun[]>(`/api/v1/workspaces/${workspaceId}/evals/runs`),
+  getEvalRunDetail: (workspaceId: string, runId: string) =>
+    requestPath<EvalRunDetail>(
+      `/api/v1/workspaces/${workspaceId}/evals/runs/${runId}`,
+    ),
+  promoteMessageToEval: (
+    workspaceId: string,
+    messageId: string,
+    body: { dataset_id?: string; expected_answer?: string } = {},
+  ) =>
+    apiRequest<EvalCase>(
+      `/api/v1/workspaces/${workspaceId}/messages/${messageId}/promote-to-eval`,
+      json(body),
+    ),
+
+  // 4-tier cognitive memory
+  listMemories: (
+    workspaceId: string,
+    opts?: { tier?: MemoryTier; includeSuperseded?: boolean },
+  ) => {
+    const params = new URLSearchParams();
+    if (opts?.tier) params.set("tier", opts.tier);
+    if (opts?.includeSuperseded) params.set("include_superseded", "true");
+    const qs = params.toString();
+    return requestPath<MemoryItem[]>(
+      `/api/v1/workspaces/${workspaceId}/memories${qs ? `?${qs}` : ""}`,
+    );
+  },
+  createMemory: (
+    workspaceId: string,
+    body: { tier: MemoryTier; content: string; confidence?: number },
+  ) =>
+    apiRequest<MemoryItem>(
+      `/api/v1/workspaces/${workspaceId}/memories`,
+      json(body),
+    ),
+  updateMemory: (
+    workspaceId: string,
+    memoryId: string,
+    body: { content?: string; status?: "active" | "superseded" },
+  ) =>
+    apiRequest<MemoryItem>(
+      `/api/v1/workspaces/${workspaceId}/memories/${memoryId}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    ),
+  deleteMemory: (workspaceId: string, memoryId: string) =>
+    apiRequest<void>(`/api/v1/workspaces/${workspaceId}/memories/${memoryId}`, {
+      method: "DELETE",
+    }),
 };

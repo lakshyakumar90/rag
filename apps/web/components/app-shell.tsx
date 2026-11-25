@@ -7,6 +7,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Command } from "cmdk";
 import {
   BarChart3,
+  Brain,
+  CheckCircle2,
   ChevronDown,
   FileText,
   LayoutGrid,
@@ -46,6 +48,8 @@ import {
 const NAV = [
   { href: "documents", label: "Documents", icon: FileText },
   { href: "chat", label: "Chat", icon: MessageSquare },
+  { href: "evals", label: "Evals", icon: CheckCircle2 },
+  { href: "memory", label: "Memory", icon: Brain },
   { href: "members", label: "Members", icon: Users },
   { href: "usage", label: "Usage", icon: BarChart3 },
   { href: "settings", label: "Settings", icon: Settings2 },
