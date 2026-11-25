@@ -12,6 +12,7 @@ from api.v1.endpoints.embedding_profiles import router as embedding_profiles_rou
 from api.v1.endpoints.evals import promote_router as evals_promote_router
 from api.v1.endpoints.evals import router as evals_router
 from api.v1.endpoints.invitations import router as invitations_router
+from api.v1.endpoints.memory import router as memory_router
 from api.v1.endpoints.production import router as production_router
 from api.v1.endpoints.provider_configs import router as provider_configs_router
 from api.v1.endpoints.retrieval import router as retrieval_router
@@ -23,6 +24,7 @@ router.include_router(auth_router)
 router.include_router(users_router)
 router.include_router(workspaces_router)
 router.include_router(invitations_router)
+router.include_router(memory_router)
 router.include_router(documents_router)
 router.include_router(provider_configs_router)
 router.include_router(cli_router)

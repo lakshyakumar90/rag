@@ -62,6 +62,9 @@ def sanitize_context_text(text: str) -> str:
     cleaned = cleaned.replace("<context", "&lt;context").replace(
         "</context", "&lt;/context"
     )
+    cleaned = cleaned.replace("<memory", "&lt;memory").replace(
+        "</memory", "&lt;/memory"
+    )
     return cleaned.strip()
 
 
@@ -190,3 +193,27 @@ def parse_citations(answer: str, sources: list[Source]) -> list[Citation]:
             )
         )
     return citations
+
+
+def build_memory_block(
+    memories: list,
+    procedural_rules: list | None = None,
+) -> str:
+    """Render trusted workspace memory in a dedicated <memory> block.
+
+    Strictly separated from untrusted <context> document chunks so document
+    prompt injections cannot spoof or poison memory directives.
+    """
+    lines: list[str] = []
+    for rule in procedural_rules or []:
+        text = sanitize_context_text(getattr(rule, "content", str(rule)))
+        if text:
+            lines.append(f"- [procedural] {text}")
+    for mem in memories or []:
+        tier = getattr(mem, "tier", "semantic")
+        text = sanitize_context_text(getattr(mem, "content", str(mem)))
+        if text:
+            lines.append(f"- [{tier}] {text}")
+    if not lines:
+        return ""
+    return "<memory>\n" + "\n".join(lines) + "\n</memory>"

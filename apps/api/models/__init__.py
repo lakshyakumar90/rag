@@ -7,6 +7,7 @@ from models.enums import DocumentStatus, InvitationStatus, MembershipRole
 from models.evals import EvalCase, EvalDataset, EvalResult, EvalRun
 from models.invitation import Invitation
 from models.membership import Membership
+from models.memory import WorkspaceMemory
 from models.production import AuditLog, MessageFeedback
 from models.provider_config import ProviderConfig
 from models.qdrant import QdrantSyncState
@@ -41,4 +42,5 @@ __all__ = [
     "RefreshToken",
     "User",
     "Workspace",
+    "WorkspaceMemory",
 ]

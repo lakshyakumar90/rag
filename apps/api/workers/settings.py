@@ -14,12 +14,14 @@ from providers.queue import (
     INGEST_FAST_QUEUE,
     INGEST_JOB,
     INGEST_OCR_QUEUE,
+    MEMORY_CONSOLIDATE_JOB,
     PROFILE_SWITCH_JOB,
     SOURCE_JOB,
 )
 from services.qdrant_index import QdrantIndexService
 from workers.evals import run_eval_suite
 from workers.ingest import ingest_document
+from workers.memory import consolidate_turn_memory
 from workers.profile_switch import switch_embedding_profile
 from workers.source_ingest import ingest_source
 
@@ -78,6 +80,12 @@ class FastWorkerSettings(_BaseWorkerSettings):
             run_eval_suite,
             name=EVAL_SUITE_JOB,
             timeout=settings.ingest_job_timeout_seconds + 10,
+            max_tries=2,
+        ),
+        func(
+            consolidate_turn_memory,
+            name=MEMORY_CONSOLIDATE_JOB,
+            timeout=60,
             max_tries=2,
         ),
     ]
