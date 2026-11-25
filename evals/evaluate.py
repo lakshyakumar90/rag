@@ -12,7 +12,9 @@ The embedding and reranking implementations are deterministic stand-ins (see
 evals/README.md); swap them for real providers to score a production stack.
 """
 
+import argparse
 import asyncio
+import os
 import hashlib
 import json
 import math
@@ -364,7 +366,7 @@ async def run_variant(
                 fused = reciprocal_rank_fusion(
                     vector_hits, keyword_hits, k=settings.rrf_k
                 )
-                ranked = await service._rerank(question["question"], fused)
+                ranked, _ = await service._rerank(question["question"], fused)
                 top = ranked[: settings.retrieval_top_k]
                 answerable = bool(top) and (
                     top[0].score >= settings.retrieval_score_threshold
@@ -425,7 +427,55 @@ async def run_variant(
     }
 
 
-async def main() -> None:
+def format_markdown_table(rows: list[dict]) -> str:
+    lines = [
+        "| Variant | Recall@1 | Recall@3 | Recall@5 | Faithfulness | Citation Acc | IDK Acc |",
+        "| :--- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for row in rows:
+        lines.append(
+            f"| `{row['variant']}` | {row['hit@1']:.2f} | {row['hit@3']:.2f} "
+            f"| {row['hit@5']:.2f} | {row['answer_correctness']:.2f} "
+            f"| {row['citation_accuracy']:.2f} | {row['idk_accuracy']:.2f} |"
+        )
+    return "\n".join(lines)
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="RAG Workspace Evaluation CLI")
+    parser.add_argument(
+        "--fast",
+        action="store_true",
+        help="Run only the primary hybrid+rerank production variant.",
+    )
+    parser.add_argument(
+        "--markdown",
+        action="store_true",
+        help="Print a Markdown summary table (also written to GITHUB_STEP_SUMMARY).",
+    )
+    parser.add_argument(
+        "--fail-under-recall",
+        type=float,
+        default=0.0,
+        help="Exit non-zero if best Recall@5 drops below this floor.",
+    )
+    parser.add_argument(
+        "--fail-under-faithfulness",
+        type=float,
+        default=0.0,
+        help="Exit non-zero if best Faithfulness/Answer accuracy drops below this floor.",
+    )
+    parser.add_argument(
+        "--fail-under-citation",
+        type=float,
+        default=0.0,
+        help="Exit non-zero if best Citation Accuracy drops below this floor.",
+    )
+    return parser.parse_args(argv)
+
+
+async def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
     settings = get_settings()
     settings.retrieval_candidate_k = 20
     settings.retrieval_top_k = 5
@@ -433,13 +483,20 @@ async def main() -> None:
     settings.rrf_k = 60
     corpus = load_corpus()
     questions = load_questions()
-    variants = [
-        Variant(chunk_tokens=size, embedding=embedding, mode=mode, rerank=rerank)
-        for size in (128, 256, 512)
-        for embedding in ("hashing-256", "hashing-768", "tfidf-768")
-        for mode in ("vector", "hybrid")
-        for rerank in (False, True)
-    ]
+    if args.fast:
+        variants = [
+            Variant(
+                chunk_tokens=256, embedding="tfidf-768", mode="hybrid", rerank=True
+            )
+        ]
+    else:
+        variants = [
+            Variant(chunk_tokens=size, embedding=embedding, mode=mode, rerank=rerank)
+            for size in (128, 256, 512)
+            for embedding in ("hashing-256", "hashing-768", "tfidf-768")
+            for mode in ("vector", "hybrid")
+            for rerank in (False, True)
+        ]
     rows = []
     for index, variant in enumerate(variants, start=1):
         rows.append(await run_variant(variant, corpus, questions, settings))
@@ -462,18 +519,52 @@ async def main() -> None:
     target = EVALS / "results.json"
     target.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(f"\nWrote {target}")
-    header = ("variant", "hit@1", "hit@3", "hit@5", "answer", "citation", "idk")
-    print(
-        f"{header[0]:<48} {header[1]:>7} {header[2]:>7} {header[3]:>7} "
-        f"{header[4]:>7} {header[5]:>9} {header[6]:>7}"
-    )
-    for row in rows:
+
+    md_table = format_markdown_table(rows)
+    if args.markdown:
+        print("\n" + md_table)
+        summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+        if summary_path:
+            with open(summary_path, "a", encoding="utf-8") as fh:
+                fh.write("## RAG Evaluation Summary\n\n" + md_table + "\n")
+    else:
+        header = ("variant", "hit@1", "hit@3", "hit@5", "answer", "citation", "idk")
         print(
-            f"{row['variant']:<48} {row['hit@1']:>7.2f} {row['hit@3']:>7.2f} "
-            f"{row['hit@5']:>7.2f} {row['answer_correctness']:>7.2f} "
-            f"{row['citation_accuracy']:>9.2f} {row['idk_accuracy']:>7.2f}"
+            f"{header[0]:<48} {header[1]:>7} {header[2]:>7} {header[3]:>7} "
+            f"{header[4]:>7} {header[5]:>9} {header[6]:>7}"
         )
+        for row in rows:
+            print(
+                f"{row['variant']:<48} {row['hit@1']:>7.2f} {row['hit@3']:>7.2f} "
+                f"{row['hit@5']:>7.2f} {row['answer_correctness']:>7.2f} "
+                f"{row['citation_accuracy']:>9.2f} {row['idk_accuracy']:>7.2f}"
+            )
+
+    best_recall = max(row["hit@5"] for row in rows)
+    best_faith = max(row["answer_correctness"] for row in rows)
+    best_cite = max(row["citation_accuracy"] for row in rows)
+
+    failures: list[str] = []
+    if best_recall < args.fail_under_recall:
+        failures.append(
+            f"Recall@5 {best_recall:.3f} < floor {args.fail_under_recall:.3f}"
+        )
+    if best_faith < args.fail_under_faithfulness:
+        failures.append(
+            f"Faithfulness {best_faith:.3f} < floor {args.fail_under_faithfulness:.3f}"
+        )
+    if best_cite < args.fail_under_citation:
+        failures.append(
+            f"Citation Accuracy {best_cite:.3f} < floor {args.fail_under_citation:.3f}"
+        )
+
+    if failures:
+        print("\nREGRESSION GATE FAILED:", file=sys.stderr)
+        for msg in failures:
+            print(f"  - {msg}", file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    raise SystemExit(asyncio.run(main()))

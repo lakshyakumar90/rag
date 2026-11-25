@@ -1,0 +1,51 @@
+name: RAG Evaluation Regression Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      fail_under_recall:
+        description: "Minimum Recall@5 threshold (0.0-1.0)"
+        required: false
+        default: "0.80"
+      fail_under_faithfulness:
+        description: "Minimum Faithfulness threshold (0.0-1.0)"
+        required: false
+        default: "0.85"
+      fail_under_citation:
+        description: "Minimum Citation Accuracy threshold (0.0-1.0)"
+        required: false
+        default: "0.80"
+  pull_request:
+    types: [labeled]
+
+jobs:
+  evals:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.label.name == 'run-evals')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      - name: Run threshold-gated RAG evaluation suite
+        run: |
+          RECALL="${{ github.event.inputs.fail_under_recall || '0.80' }}"
+          FAITH="${{ github.event.inputs.fail_under_faithfulness || '0.85' }}"
+          CITE="${{ github.event.inputs.fail_under_citation || '0.80' }}"
+          uv run python evals/evaluate.py \
+            --fast \
+            --markdown \
+            --fail-under-recall "$RECALL" \
+            --fail-under-faithfulness "$FAITH" \
+            --fail-under-citation "$CITE"
