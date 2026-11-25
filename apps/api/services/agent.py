@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 TOOL_SYSTEM = f"""You are a careful research assistant. You have four read-only tools.
 Reply with ONE JSON object and nothing else:
 - to use a tool: {{"tool": "document_search" | "web_search" | "calculator" |
-  "summarize_document", "arguments": {{...}}}}
+  "summarize_document" | "decompose_query" | "compare_documents", "arguments": {{...}}}}
 - to finish: {{"answer": "your grounded answer with [n] citations"}}
 
 Tool inputs:
@@ -34,6 +34,8 @@ Tool inputs:
 - web_search: {{"query": string, "max_results"?: 1-5}}
 - calculator: {{"expression": string}} with only numbers and + - * / ** % ( )
 - summarize_document: {{"document_id": uuid}}
+- decompose_query: {{"query": string}}
+- compare_documents: {{"document_ids": [uuid], "criteria": [string]}}
 
 Rules:
 - Use document_search before answering questions about the workspace.
@@ -259,3 +261,81 @@ class AgentService:
                 }
             )
         return citations
+
+
+async def decompose_query(query: str, llm: LLMProvider | None = None) -> list[str]:
+    """Split a complex comparison or multi-part question into parallel sub-queries."""
+    cleaned = query.strip()
+    if not cleaned:
+        return []
+    if llm is not None:
+        prompt = (
+            "Split the following complex research question into 2 to 4 concise, "
+            "independent sub-queries for parallel document retrieval. "
+            'Return STRICT JSON ONLY: {"sub_queries": ["..."]}.\n\n'
+            f"Question: {cleaned}"
+        )
+        try:
+            resp = await llm.complete(
+                [ChatMessage(role="user", content=prompt)],
+                max_tokens=200,
+                temperature=0.0,
+            )
+            data = json.loads(resp.text.strip())
+            subs = [
+                str(s).strip()
+                for s in (data.get("sub_queries") or [])
+                if str(s).strip()
+            ]
+            if subs:
+                return subs[:4]
+        except Exception:
+            pass
+
+    import re
+
+    lower = cleaned.lower()
+    if " on " in lower:
+        prefix, rest = cleaned.split(" on ", 1)
+        parts = [
+            p.strip(" ?.,")
+            for p in re.split(r",|\band\b|\bvs\.?\b", rest, flags=re.I)
+            if p.strip(" ?.,")
+        ]
+        if len(parts) >= 2:
+            return [f"{prefix.strip()} regarding {part}" for part in parts[:4]]
+    parts = [
+        p.strip(" ?.,")
+        for p in re.split(r"\band\b|;", cleaned, flags=re.I)
+        if len(p.strip()) > 6
+    ]
+    return parts[:4] if len(parts) >= 2 else [cleaned]
+
+
+async def self_critique_answer(
+    query: str,
+    draft_answer: str,
+    evidence: str,
+    llm: LLMProvider | None = None,
+) -> str:
+    """Critique a long research answer to ensure citations and evidence alignment."""
+    if not draft_answer.strip() or draft_answer.strip().lower() == "i don't know":
+        return draft_answer
+    if llm is not None and len(draft_answer) >= 200:
+        prompt = (
+            "Review the DRAFT answer against EVIDENCE for the QUESTION. "
+            "Fix any unsupported claim or missing [n] citation. "
+            "Return only the improved final answer.\n\n"
+            f"Q: {query}\n\nEVIDENCE:\n{evidence[:3500]}\n\nDRAFT:\n{draft_answer}"
+        )
+        try:
+            resp = await llm.complete(
+                [ChatMessage(role="user", content=prompt)],
+                max_tokens=768,
+                temperature=0.0,
+            )
+            if resp.text.strip():
+                return resp.text.strip()
+        except Exception:
+            pass
+    return draft_answer

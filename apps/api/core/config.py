@@ -116,7 +116,7 @@ class Settings(BaseSettings):
     agent_max_web_chars: int = Field(
         default=4000, validation_alias="AGENT_MAX_WEB_CHARS"
     )
-    agent_max_steps: int = Field(default=4, validation_alias="AGENT_MAX_STEPS")
+    agent_max_steps: int = Field(default=8, validation_alias="AGENT_MAX_STEPS")
 
     # LLM providers (chat/rag phase)
     llm_provider: str = Field(default="ollama", validation_alias="LLM_PROVIDER")

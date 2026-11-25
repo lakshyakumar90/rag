@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import html
+import uuid
 from html.parser import HTMLParser
 from urllib.parse import quote
 
@@ -196,3 +198,84 @@ class AgentTools:
         if name == "summarize_document":
             return await self.summarize_document(arguments)
         raise ValueError(f"unknown tool: {name}")
+
+    async def compare_documents(
+        self,
+        document_ids: list[uuid.UUID],
+        criteria: list[str],
+    ) -> dict:
+        """Compare multiple documents across criteria into a cited Markdown table."""
+        from sqlalchemy import select
+
+        from models import Document
+
+        if not document_ids or not criteria:
+            return {"markdown_table": "", "citations": []}
+
+        docs = (
+            (
+                await self._session.execute(
+                    select(Document).where(
+                        Document.workspace_id == self._context.workspace.id,
+                        Document.id.in_(document_ids),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        doc_by_id = {d.id: d for d in docs}
+        ordered_ids = [did for did in document_ids if did in doc_by_id]
+        if not ordered_ids:
+            return {"markdown_table": "", "citations": []}
+
+        citations: list[dict] = []
+        cite_index: dict[uuid.UUID, int] = {}
+
+        def _register_citation(item) -> int:
+            if item.chunk_id not in cite_index:
+                num = len(citations) + 1
+                cite_index[item.chunk_id] = num
+                citations.append(
+                    {
+                        "number": num,
+                        "chunk_id": str(item.chunk_id),
+                        "document_id": str(item.document_id),
+                        "filename": item.filename,
+                        "page_number": item.page_number,
+                        "heading_path": item.heading_path,
+                    }
+                )
+            return cite_index[item.chunk_id]
+
+        headers = ["Criterion"] + [doc_by_id[did].filename for did in ordered_ids]
+        lines = [
+            "| " + " | ".join(headers) + " |",
+            "| " + " | ".join(["---"] * len(headers)) + " |",
+        ]
+
+        for criterion in criteria:
+            # Query all target documents in parallel for this criterion
+            results = await asyncio.gather(
+                *[
+                    self._retrieval.search(
+                        self._context,
+                        criterion,
+                        top_k=1,
+                        document_ids=[did],
+                    )
+                    for did in ordered_ids
+                ]
+            )
+            cells = [criterion]
+            for res in results:
+                if res.items:
+                    top = res.items[0]
+                    num = _register_citation(top)
+                    snippet = " ".join(top.text.split())[:140].replace("|", "/")
+                    cells.append(f"{snippet} [{num}]")
+                else:
+                    cells.append("Not mentioned")
+            lines.append("| " + " | ".join(cells) + " |")
+
+        return {"markdown_table": "\n".join(lines), "citations": citations}

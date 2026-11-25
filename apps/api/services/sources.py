@@ -211,3 +211,114 @@ def notion_zip_to_markdown(data: bytes) -> FetchedSource:
         mime_type="text/markdown",
         metadata={"notion_pages": titles},
     )
+
+
+@dataclass(frozen=True)
+class IncrementalGitHubSyncResult:
+    base_sha: str | None
+    head_sha: str
+    modified_files: list[str]
+    deleted_files: list[str]
+    skipped_files: list[str]
+    fetched_contents: dict[str, str]
+    metadata: dict
+
+
+async def fetch_github_incremental(
+    owner: str,
+    repo: str,
+    *,
+    ref: str | None = None,
+    last_synced_commit_sha: str | None = None,
+    http_client: httpx.AsyncClient | None = None,
+) -> IncrementalGitHubSyncResult:
+    """Incrementally sync a GitHub repo via the Compare API.
+
+    Fetches only added/modified text files since `last_synced_commit_sha`,
+    tracks deleted files, and skips unchanged or binary files.
+    """
+    token = os.environ.get("GITHUB_TOKEN")
+    headers = {"Accept": "application/vnd.github+json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    target_ref = ref or "HEAD"
+    owns = http_client is None
+    client = http_client or httpx.AsyncClient(timeout=30.0, headers=headers)
+    try:
+        if not last_synced_commit_sha:
+            full = await fetch_github(owner, repo, ref=target_ref)
+            head_sha = str(full.metadata.get("commit") or target_ref)
+            return IncrementalGitHubSyncResult(
+                base_sha=None,
+                head_sha=head_sha,
+                modified_files=[f"{owner}/{repo}"],
+                deleted_files=[],
+                skipped_files=[],
+                fetched_contents={f"{owner}/{repo}": full.text},
+                metadata={
+                    **full.metadata,
+                    "last_synced_commit_sha": head_sha,
+                    "incremental": False,
+                },
+            )
+
+        compare_url = (
+            f"https://api.github.com/repos/{owner}/{repo}/compare/"
+            f"{last_synced_commit_sha}...{target_ref}"
+        )
+        resp = await client.get(compare_url, headers=headers)
+        if resp.status_code >= 400:
+            raise SourceFetchError(
+                f"GitHub compare API returned HTTP {resp.status_code}"
+            )
+        payload = resp.json()
+        commits = payload.get("commits") or []
+        head_sha = (
+            str(commits[-1]["sha"])
+            if commits and commits[-1].get("sha")
+            else last_synced_commit_sha
+        )
+
+        modified_files: list[str] = []
+        deleted_files: list[str] = []
+        skipped_files: list[str] = []
+        fetched_contents: dict[str, str] = {}
+
+        for entry in payload.get("files") or []:
+            fname = str(entry.get("filename") or "")
+            status = str(entry.get("status") or "")
+            if status == "removed":
+                deleted_files.append(fname)
+                continue
+            if not fname.lower().endswith(tuple(_TEXT_EXTENSIONS)):
+                skipped_files.append(fname)
+                continue
+            raw_url = entry.get("raw_url")
+            if not raw_url:
+                skipped_files.append(fname)
+                continue
+            file_resp = await client.get(str(raw_url), headers=headers)
+            if file_resp.status_code < 400:
+                modified_files.append(fname)
+                fetched_contents[fname] = file_resp.text[:_MAX_SOURCE_BYTES]
+            else:
+                skipped_files.append(fname)
+
+        return IncrementalGitHubSyncResult(
+            base_sha=last_synced_commit_sha,
+            head_sha=head_sha,
+            modified_files=modified_files,
+            deleted_files=deleted_files,
+            skipped_files=skipped_files,
+            fetched_contents=fetched_contents,
+            metadata={
+                "repository": f"{owner}/{repo}",
+                "last_synced_commit_sha": head_sha,
+                "previous_commit_sha": last_synced_commit_sha,
+                "incremental": True,
+            },
+        )
+    finally:
+        if owns:
+            await client.aclose()
