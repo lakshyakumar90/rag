@@ -69,7 +69,10 @@ async def test_repeated_query_hits_cache_and_grant_change_invalidates(
     first = await client.post(url, headers=headers, json={"query": "zebra procedure"})
     second = await client.post(url, headers=headers, json={"query": "zebra procedure"})
     assert first.status_code == second.status_code == 200
-    assert first.json() == second.json()  # identical, including citations
+    first_body, second_body = first.json(), second.json()
+    assert second_body["cache_hit"] is True
+    for key in ("answer", "answerable", "threshold", "items"):
+        assert first_body[key] == second_body[key]
     assert second.json()["items"][0]["document_id"] == str(document_id)
     assert stats()["hits"] >= 1
 

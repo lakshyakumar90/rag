@@ -54,8 +54,6 @@ class RetrievalService:
             getattr(context.workspace, "active_embedding_profile", None)
             or settings.embedding_profile
         )
-        key = cache.cache_key(workspace_id, query, document_ids, profile)
-
         # Per-document grants are applied before either index is queried, and
         # re-verified against PostgreSQL for Qdrant hits.
         access = DocumentAccessService(self._session)
@@ -82,6 +80,15 @@ class RetrievalService:
                 )
 
         authorization = cache.authorization_key(context.user.id, visible, str(role))
+        doc_filter_hash = cache.doc_filter_hash(document_ids)
+        key = cache.cache_key(
+            workspace_id,
+            query,
+            document_ids,
+            profile,
+            auth_scope_hash=authorization,
+            top_k=top_k,
+        )
         embeddings = await self._embeddings_for(profile, settings)
         vector = await embeddings.embed_query(query)
         if settings.query_cache_enabled:
@@ -92,6 +99,7 @@ class RetrievalService:
                 None if visible is None else set(visible),
                 vector=vector,
                 profile=profile,
+                doc_filter_hash=doc_filter_hash,
             )
             if hit is not None:
                 elapsed_ms = round((time.perf_counter() - started) * 1000.0, 2)
@@ -129,7 +137,15 @@ class RetrievalService:
             cache_hit=False,
         )
         if settings.query_cache_enabled:
-            await cache.put(workspace_id, key, authorization, response, vector, profile)
+            await cache.put(
+                workspace_id,
+                key,
+                authorization,
+                response,
+                vector,
+                profile,
+                doc_filter_hash=doc_filter_hash,
+            )
         return response
 
     @staticmethod

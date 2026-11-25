@@ -7,6 +7,7 @@ Redis for login would turn a cache outage into a full authentication outage.
 """
 
 import hashlib
+import ipaddress
 import logging
 import uuid
 from collections.abc import Awaitable
@@ -64,14 +65,36 @@ class RateLimitExceededError(DomainError):
         self.details = {"retry_after_seconds": retry_after}
 
 
+def _is_trusted_proxy(peer_host: str, cidrs_csv: str) -> bool:
+    if not peer_host or peer_host == "unknown":
+        return False
+    try:
+        peer_ip = ipaddress.ip_address(peer_host)
+    except ValueError:
+        return False
+    for raw in cidrs_csv.split(","):
+        cidr = raw.strip()
+        if not cidr:
+            continue
+        try:
+            if peer_ip in ipaddress.ip_network(cidr, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def client_ip(request: Request) -> str:
-    """Client address, optionally from a trusted proxy's forwarded header."""
+    """Client address, trusting X-Forwarded-For only from configured proxy CIDRs."""
     settings = get_settings()
-    if settings.trust_proxy_headers:
+    peer = request.client.host if request.client else "unknown"
+    if settings.trust_proxy_headers and _is_trusted_proxy(
+        peer, settings.trusted_proxy_cidrs
+    ):
         forwarded = request.headers.get("x-forwarded-for")
         if forwarded:
-            return forwarded.split(",", 1)[0].strip() or "unknown"
-    return request.client.host if request.client else "unknown"
+            return forwarded.split(",", 1)[0].strip() or peer
+    return peer
 
 
 class LoginRateLimiter:

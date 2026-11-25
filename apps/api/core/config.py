@@ -197,9 +197,7 @@ class Settings(BaseSettings):
     rerank_model: str | None = Field(
         default="BAAI/bge-reranker-v2-m3", validation_alias="RERANK_MODEL"
     )
-    rerank_threshold: float = Field(
-        default=0.35, validation_alias="RERANK_THRESHOLD"
-    )
+    rerank_threshold: float = Field(default=0.35, validation_alias="RERANK_THRESHOLD")
     rerank_timeout_seconds: float = Field(
         default=30.0, validation_alias="RERANK_TIMEOUT_SECONDS"
     )
@@ -251,6 +249,10 @@ class Settings(BaseSettings):
     trust_proxy_headers: bool = Field(
         default=False, validation_alias="TRUST_PROXY_HEADERS"
     )
+    trusted_proxy_cidrs: str = Field(
+        default="127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16",
+        validation_alias="TRUSTED_PROXY_CIDRS",
+    )
 
     # Refresh-token cookie. HttpOnly is always on; Secure defaults on and can
     # be disabled for local plain-HTTP development.
@@ -275,6 +277,14 @@ class Settings(BaseSettings):
         default="http://localhost:3000/invitations/accept",
         validation_alias="INVITATION_ACCEPT_BASE_URL",
     )
+    resend_api_key: str | None = Field(default=None, validation_alias="RESEND_API_KEY")
+    smtp_host: str | None = Field(default=None, validation_alias="SMTP_HOST")
+    smtp_port: int = Field(default=587, validation_alias="SMTP_PORT")
+    smtp_username: str | None = Field(default=None, validation_alias="SMTP_USERNAME")
+    smtp_password: str | None = Field(default=None, validation_alias="SMTP_PASSWORD")
+    email_from: str = Field(
+        default="noreply@ragworkspace.local", validation_alias="EMAIL_FROM"
+    )
 
     # Document uploads
     max_upload_size_bytes: int = Field(
@@ -293,9 +303,7 @@ class Settings(BaseSettings):
         default=300.0, validation_alias="INGEST_JOB_TIMEOUT_SECONDS"
     )
     worker_max_jobs: int = Field(default=10, validation_alias="WORKER_MAX_JOBS")
-    worker_ocr_max_jobs: int = Field(
-        default=2, validation_alias="WORKER_OCR_MAX_JOBS"
-    )
+    worker_ocr_max_jobs: int = Field(default=2, validation_alias="WORKER_OCR_MAX_JOBS")
 
     # Chunking (500 tokens with 50-token overlap by default)
     chunk_target_tokens: int = Field(
@@ -310,9 +318,7 @@ class Settings(BaseSettings):
     chunk_parent_tokens: int = Field(
         default=1000, validation_alias="CHUNK_PARENT_TOKENS"
     )
-    chunk_child_tokens: int = Field(
-        default=250, validation_alias="CHUNK_CHILD_TOKENS"
-    )
+    chunk_child_tokens: int = Field(default=250, validation_alias="CHUNK_CHILD_TOKENS")
     contextual_retrieval_enabled: bool = Field(
         default=False, validation_alias="CONTEXTUAL_RETRIEVAL_ENABLED"
     )

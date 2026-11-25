@@ -19,7 +19,9 @@ from services.retrieval import RetrievalService
 from services.workspaces import WorkspaceContext
 from workers.tokenization import count_tokens
 
-# Active SSE streams by conversation, so a stop request can cancel generation.
+CANCEL_CHANNEL_PREFIX = "chat:cancel:"
+
+# Local task map paired with Redis Pub/Sub so cancellation works across replicas.
 active_streams: dict[uuid.UUID, asyncio.Task] = {}
 
 
@@ -30,6 +32,53 @@ def cancel_stream(conversation_id: uuid.UUID) -> bool:
         return False
     task.cancel()
     return True
+
+
+async def publish_cancel_stream(stream_id: uuid.UUID, redis_client=None) -> bool:
+    """Publish a cancellation signal on Redis `chat:cancel:<stream_id>`."""
+    local_cancelled = cancel_stream(stream_id)
+    redis = redis_client
+    if redis is None:
+        try:
+            from core.redis import get_redis_client
+
+            redis = get_redis_client()
+        except Exception:
+            redis = None
+    if redis is not None:
+        try:
+            receivers = await redis.publish(
+                f"{CANCEL_CHANNEL_PREFIX}{stream_id}", "cancel"
+            )
+            return local_cancelled or bool(receivers)
+        except Exception:
+            pass
+    return local_cancelled
+
+
+async def watch_redis_cancel(
+    stream_id: uuid.UUID, task: asyncio.Task, redis_client
+) -> None:
+    """Subscribe to `chat:cancel:<stream_id>` and cancel the local stream task."""
+    channel = f"{CANCEL_CHANNEL_PREFIX}{stream_id}"
+    pubsub = redis_client.pubsub()
+    try:
+        await pubsub.subscribe(channel)
+        async for message in pubsub.listen():
+            if message and message.get("type") == "message":
+                if not task.done():
+                    task.cancel()
+                break
+    except asyncio.CancelledError:
+        return
+    except Exception:
+        return
+    finally:
+        try:
+            await pubsub.unsubscribe(channel)
+            await pubsub.aclose()
+        except Exception:
+            pass
 
 
 def _model_options(provider: object, method: str, model: str | None) -> dict[str, str]:
