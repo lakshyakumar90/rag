@@ -4,6 +4,7 @@ from models.base import Base, BaseModel
 from models.conversation import Conversation, Message
 from models.document import Document, DocumentChunk
 from models.enums import DocumentStatus, InvitationStatus, MembershipRole
+from models.evals import EvalCase, EvalDataset, EvalResult, EvalRun
 from models.invitation import Invitation
 from models.membership import Membership
 from models.production import AuditLog, MessageFeedback
@@ -24,6 +25,10 @@ __all__ = [
     "EmbeddingProfile",
     "DocumentChunk",
     "DocumentStatus",
+    "EvalCase",
+    "EvalDataset",
+    "EvalResult",
+    "EvalRun",
     "Invitation",
     "InvitationStatus",
     "Membership",

@@ -77,14 +77,12 @@ async def generate_context_header(
             "for search. Output only the context sentences."
         )
         try:
-            from providers.llm.types import ChatMessage, LLMRequest
+            from providers.llm.types import ChatMessage
 
             resp = await llm_provider.complete(
-                LLMRequest(
-                    messages=[ChatMessage(role="user", content=prompt)],
-                    max_tokens=96,
-                    temperature=0.0,
-                )
+                [ChatMessage(role="user", content=prompt)],
+                max_tokens=96,
+                temperature=0.0,
             )
             header = (resp.text or "").strip()
             if header:
@@ -92,7 +90,6 @@ async def generate_context_header(
         except Exception as exc:
             logger.debug("contextual header LLM fallback: %s", exc)
     return _fallback_context_header(filename, heading_path, parent_text)
-
 
 
 async def _update_progress(

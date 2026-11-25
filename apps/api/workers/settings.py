@@ -10,6 +10,7 @@ from providers.embeddings import OllamaEmbeddingProvider
 from providers.minio import MinioStorageClient
 from providers.qdrant import QdrantClient
 from providers.queue import (
+    EVAL_SUITE_JOB,
     INGEST_FAST_QUEUE,
     INGEST_JOB,
     INGEST_OCR_QUEUE,
@@ -17,6 +18,7 @@ from providers.queue import (
     SOURCE_JOB,
 )
 from services.qdrant_index import QdrantIndexService
+from workers.evals import run_eval_suite
 from workers.ingest import ingest_document
 from workers.profile_switch import switch_embedding_profile
 from workers.source_ingest import ingest_source
@@ -71,6 +73,12 @@ class FastWorkerSettings(_BaseWorkerSettings):
             name=SOURCE_JOB,
             timeout=settings.ingest_job_timeout_seconds + 10,
             max_tries=settings.ingest_max_tries,
+        ),
+        func(
+            run_eval_suite,
+            name=EVAL_SUITE_JOB,
+            timeout=settings.ingest_job_timeout_seconds + 10,
+            max_tries=2,
         ),
     ]
 

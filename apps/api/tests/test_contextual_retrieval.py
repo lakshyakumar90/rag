@@ -89,7 +89,7 @@ def test_prompting_packs_deduplicated_parent_content_with_child_citations() -> N
 
 async def test_contextual_header_generation_with_llm_and_fallback() -> None:
     class FakeLLM:
-        async def complete(self, req):
+        async def complete(self, messages, **opts):
             return SimpleNamespace(
                 text="From Acme Corp Q2 Financial Report, describing AuroraDB adoption."
             )
@@ -173,10 +173,14 @@ async def test_ingest_contextual_hierarchical_stores_headers_and_parents(
 
     async with session_factory() as session:
         chunks = (
-            await session.execute(
-                select(DocumentChunk).where(DocumentChunk.document_id == doc_id)
+            (
+                await session.execute(
+                    select(DocumentChunk).where(DocumentChunk.document_id == doc_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(chunks) >= 1
         assert all(chunk.parent_content is not None for chunk in chunks)
         assert all(chunk.context_header is not None for chunk in chunks)
