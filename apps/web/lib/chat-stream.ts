@@ -9,6 +9,13 @@ export type ChatEvent =
   | { type: "sources"; sources: SourceRef[] }
   | { type: "token"; text: string }
   | {
+      type: "confidence";
+      confidence_score: number;
+      confidence_level: "high" | "medium" | "low";
+      confidence_breakdown?: Record<string, unknown> | null;
+      retrieval_diagnostics?: Record<string, unknown> | null;
+    }
+  | {
       type: "done";
       answer: string;
       answerable: boolean;
