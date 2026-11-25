@@ -18,6 +18,12 @@ class ScoredChunk:
     page_number: int | None
     heading_path: list[str] | None
     score: float
+    dense_rank: int | None = None
+    lexical_rank: int | None = None
+    dense_score: float | None = None
+    lexical_score: float | None = None
+    rrf_score: float | None = None
+    rerank_score: float | None = None
 
 
 def _filter_clause(document_ids: list[uuid.UUID] | None) -> tuple[str, dict]:

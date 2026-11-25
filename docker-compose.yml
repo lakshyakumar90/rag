@@ -26,6 +26,10 @@ x-api-env: &api-env
   QDRANT_URL: http://qdrant:6333
   # Reads switch to Qdrant only after the backfill has been verified.
   QDRANT_ENABLED: ${QDRANT_ENABLED:-false}
+  RERANK_ENABLED: ${RERANK_ENABLED:-false}
+  RERANK_BASE_URL: http://reranker:80
+  RERANK_MODEL: ${RERANK_MODEL:-BAAI/bge-reranker-v2-m3}
+  RERANK_THRESHOLD: ${RERANK_THRESHOLD:-0.35}
 
 services:
   postgres:
@@ -220,9 +224,31 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  reranker:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.6
+    container_name: rag-reranker
+    command:
+      - "--model-id"
+      - "${RERANK_MODEL:-BAAI/bge-reranker-v2-m3}"
+      - "--port"
+      - "80"
+    ports:
+      - "127.0.0.1:${RERANKER_PORT:-8081}:80"
+    volumes:
+      - reranker_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    profiles: ["reranker"]
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:
   minio_data:
   ollama_data:
   qdrant_data:
+  reranker_data:

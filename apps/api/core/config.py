@@ -185,10 +185,21 @@ class Settings(BaseSettings):
     retrieval_score_threshold: float = Field(
         default=0.15, validation_alias="RETRIEVAL_SCORE_THRESHOLD"
     )
+    retrieval_cosine_threshold: float = Field(
+        default=0.25, validation_alias="RETRIEVAL_COSINE_THRESHOLD"
+    )
+    retrieval_rrf_min_score: float = Field(
+        default=0.012, validation_alias="RETRIEVAL_RRF_MIN_SCORE"
+    )
     rrf_k: int = Field(default=60, validation_alias="RRF_K")
     rerank_enabled: bool = Field(default=False, validation_alias="RERANK_ENABLED")
     rerank_base_url: str = Field(default="", validation_alias="RERANK_BASE_URL")
-    rerank_model: str | None = Field(default=None, validation_alias="RERANK_MODEL")
+    rerank_model: str | None = Field(
+        default="BAAI/bge-reranker-v2-m3", validation_alias="RERANK_MODEL"
+    )
+    rerank_threshold: float = Field(
+        default=0.35, validation_alias="RERANK_THRESHOLD"
+    )
     rerank_timeout_seconds: float = Field(
         default=30.0, validation_alias="RERANK_TIMEOUT_SECONDS"
     )

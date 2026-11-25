@@ -308,3 +308,105 @@ async def test_reranker_reorders_results(
         assert scores == sorted(scores, reverse=True)
     finally:
         app.dependency_overrides.pop(get_reranker, None)
+
+
+class CalibratedReranker:
+    """Returns high calibrated sigmoid score for on-topic queries, low for off-topic."""
+
+    def __init__(self, score: float) -> None:
+        self.enabled = True
+        self._score = score
+
+    async def rerank(self, query: str, texts: list[str]) -> list[RerankScore]:
+        return [RerankScore(index=i, score=self._score) for i in range(len(texts))]
+
+
+class WeakCosineEmbeddings:
+    """Simulates an off-topic query with very low cosine similarity (0.08)."""
+
+    dimension = 4
+
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [[1.0, 0.0, 0.0, 0.0] for _ in texts]
+
+    async def embed_query(self, text: str) -> list[float]:
+        # cos([0.08, 0.9968, 0, 0], [1, 0, 0, 0]) ~= 0.08
+        return [0.08, 0.9968, 0.0, 0.0]
+
+
+async def test_reranker_abstention_gate_on_topic_and_off_topic(
+    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    headers = await _login(client, "rerank-gate@example.com")
+    wid = await _workspace(client, headers, "rerank-gate")
+    async with session_factory() as session:
+        owner_id = (await session.execute(select(User))).scalar_one().id
+    await _seed_document(
+        session_factory, uuid.UUID(wid), owner_id, "policy.txt", "alpha beta policy"
+    )
+
+    # On-topic: calibrated rerank score 0.82 >= 0.35 -> answerable=True
+    app.dependency_overrides[get_reranker] = lambda: CalibratedReranker(0.82)
+    try:
+        on_topic = await client.post(
+            f"/api/v1/workspaces/{wid}/search",
+            headers=headers,
+            json={"query": "alpha"},
+        )
+        assert on_topic.status_code == 200
+        body = on_topic.json()
+        assert body["answerable"] is True
+        assert body["reranked"] is True
+        assert body["retrieval_ms"] is not None
+        item = body["items"][0]
+        assert item["dense_rank"] == 1
+        assert item["lexical_rank"] == 1
+        assert item["rrf_score"] is not None and item["rrf_score"] > 0
+        assert item["rerank_score"] == pytest.approx(0.82)
+        assert item["retrieval_ms"] is not None
+    finally:
+        app.dependency_overrides.pop(get_reranker, None)
+
+    # Off-topic: calibrated rerank score 0.12 < 0.35 -> answerable=False
+    app.dependency_overrides[get_reranker] = lambda: CalibratedReranker(0.12)
+    try:
+        off_topic = await client.post(
+            f"/api/v1/workspaces/{wid}/search",
+            headers=headers,
+            json={"query": "alpha unrelated"},
+        )
+        assert off_topic.status_code == 200
+        body = off_topic.json()
+        assert body["answerable"] is False
+        assert body["answer"] == "I don't know"
+        assert body["reranked"] is True
+    finally:
+        app.dependency_overrides.pop(get_reranker, None)
+
+
+async def test_no_reranker_fallback_rejects_weak_cosine_off_topic(
+    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    headers = await _login(client, "fallback-gate@example.com")
+    wid = await _workspace(client, headers, "fallback-gate")
+    async with session_factory() as session:
+        owner_id = (await session.execute(select(User))).scalar_one().id
+    await _seed_document(
+        session_factory, uuid.UUID(wid), owner_id, "a.txt", "alpha policy"
+    )
+
+    # Off-topic query: no lexical hit and weak dense cosine (0.08 < 0.25)
+    app.dependency_overrides[get_embedding_provider] = lambda: WeakCosineEmbeddings()
+    try:
+        off_topic = await client.post(
+            f"/api/v1/workspaces/{wid}/search",
+            headers=headers,
+            json={"query": "completely unrelated penguins"},
+        )
+        assert off_topic.status_code == 200
+        body = off_topic.json()
+        assert body["reranked"] is False
+        assert body["answerable"] is False
+        assert body["answer"] == "I don't know"
+    finally:
+        app.dependency_overrides[get_embedding_provider] = lambda: KeywordEmbeddings()

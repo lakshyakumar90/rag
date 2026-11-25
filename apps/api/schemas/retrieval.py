@@ -21,6 +21,11 @@ class SearchResult(BaseModel):
     score: float
     page_number: int | None
     heading_path: list[str] | None
+    dense_rank: int | None = None
+    lexical_rank: int | None = None
+    rrf_score: float | None = None
+    rerank_score: float | None = None
+    retrieval_ms: float | None = None
 
 
 class SearchResponse(BaseModel):
@@ -28,3 +33,6 @@ class SearchResponse(BaseModel):
     answerable: bool
     threshold: float
     items: list[SearchResult]
+    retrieval_ms: float | None = None
+    reranked: bool = False
+    cache_hit: bool = False

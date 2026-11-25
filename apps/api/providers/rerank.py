@@ -1,10 +1,23 @@
 """Optional cross-encoder reranking via a TEI-compatible `/rerank` endpoint."""
 
+import math
 from dataclasses import dataclass
 
 import httpx
 
 from core.config import get_settings
+
+
+def _calibrate_score(raw: float) -> float:
+    """Ensure cross-encoder score is calibrated in [0, 1] via sigmoid if needed."""
+    if 0.0 <= raw <= 1.0:
+        return raw
+    # Safeguard for backends returning raw uncalibrated logits.
+    if raw >= 0:
+        z = math.exp(-raw)
+        return 1.0 / (1.0 + z)
+    z = math.exp(raw)
+    return z / (1.0 + z)
 
 
 @dataclass(frozen=True)
@@ -38,7 +51,10 @@ class Reranker:
         if not isinstance(data, list):
             raise ValueError("rerank endpoint did not return a list")
         return [
-            RerankScore(index=int(item["index"]), score=float(item["score"]))
+            RerankScore(
+                index=int(item["index"]),
+                score=_calibrate_score(float(item["score"])),
+            )
             for item in data
         ]
 
