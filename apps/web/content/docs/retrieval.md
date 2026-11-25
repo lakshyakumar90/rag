@@ -15,3 +15,11 @@ The chat endpoint sends server-sent events with source metadata, answer tokens, 
 `services/query_cache.py` stores exact retrieval results and supports a configurable semantic cache. Exact caching is enabled by default. If varying top-k for the same query matters to an experiment, disable caching because the exact key omits requested top-k. Semantic cache is off by default. Its similarity lookup does not distinguish document scopes, so keep it disabled for document-scoped comparisons. Test cache behavior after permission, document and embedding-profile changes.
 
 A multilingual embedding profile can improve cross-language vector matching. Keyword search also depends on the configured text-search behavior and OCR on installed language packs. Run the multilingual evaluation against representative documents before relying on comparable quality across languages.
+
+
+## v2 Upgrade Highlights
+
+- **Calibrated Cross-Encoder Reranking**: Hybrid RRF (`k=60`) candidates are reranked via the self-hosted TEI `BAAI/bge-reranker-v2-m3` service with `RERANK_THRESHOLD=0.35`, and a calibrated cosine + RRF fallback when disabled.
+- **Light GraphRAG (2-Hop CTE)**: Entity triples in `entities` and `entity_edges` expand multi-hop queries via a permission-aware recursive SQL CTE.
+- **RBAC-Safe Redis Cache**: Exact and semantic cache buckets are partitioned by `(workspace_id, auth_scope_hash, doc_filter_hash)` with Redis TTL eviction.
+- See [Production Upgrade (v2)](/docs/upgrade) for full details.

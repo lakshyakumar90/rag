@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import html
 import uuid
 from html.parser import HTMLParser
@@ -255,18 +254,16 @@ class AgentTools:
         ]
 
         for criterion in criteria:
-            # Query all target documents in parallel for this criterion
-            results = await asyncio.gather(
-                *[
-                    self._retrieval.search(
-                        self._context,
-                        criterion,
-                        top_k=1,
-                        document_ids=[did],
-                    )
-                    for did in ordered_ids
-                ]
-            )
+            # Shared AsyncSession is not concurrency-safe for parallel commits.
+            results = [
+                await self._retrieval.search(
+                    self._context,
+                    criterion,
+                    top_k=1,
+                    document_ids=[did],
+                )
+                for did in ordered_ids
+            ]
             cells = [criterion]
             for res in results:
                 if res.items:

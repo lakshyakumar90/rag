@@ -13,6 +13,7 @@ export const docs = [
   { slug: "decisions", group: "Reference", title: "Decisions and alternatives", description: "Compare the chosen architecture with viable alternatives and see when to reconsider." },
   { slug: "operations", group: "Reference", title: "Operations and recovery", description: "Operate the stack, diagnose common failures, and recover the databases and document objects." },
   { slug: "testing", group: "Reference", title: "Testing and evaluation", description: "Run the right test suite and interpret what the retrieval benchmarks measure." },
+  { slug: "upgrade", group: "Reference", title: "Production Upgrade (v2)", description: "Phase 1-5 upgrades: reranking, contextual retrieval, evals, 4-tier cognitive memory, Light GraphRAG, Redis scaling, and UI overhaul." },
 ] as const;
 
 export function docHref(slug: string) {

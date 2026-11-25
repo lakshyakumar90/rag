@@ -15,3 +15,10 @@ After changing API contracts, run `pnpm --filter web api:types` and check the Op
 `evals/evaluate.py` runs questions over the controlled corpus. `evals/questions.jsonl` records the evaluation set and `evals/results.json` is a historical snapshot. Read `docs/evaluation.md` for the corpus, metrics and known defects. Measure retrieval ordering, answer abstention, and citation correctness independently. Record the embedding profile, chunk settings and cache state when comparing runs.
 
 `evals/multilingual.py` gives a starting point for language-specific evaluation. Extend it with the scripts, languages and source layouts you actually use. Separately test OCR on pages with known expected text and verify page-level citation coordinates after indexing.
+
+
+## v2 Evaluation Engine & CI Regression Gate
+
+- **From-Scratch Eval Engine**: Compute `Recall@K`, `MRR`, `NDCG@K`, `faithfulness`, `answer_relevancy`, and `citation_accuracy` via `/api/v1/workspaces/{id}/evals/*` or the `/workspaces/[id]/evals` UI.
+- **CI Regression Gate**: Run `python evals/evaluate.py --fast --markdown --fail-under-recall 0.80 --fail-under-faithfulness 0.80 --fail-under-citation 0.80` (workflow template in `evals/ci/evals.workflow.yml`).
+- See [Production Upgrade (v2)](/docs/upgrade) for full details.

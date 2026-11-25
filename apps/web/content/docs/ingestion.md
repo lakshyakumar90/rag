@@ -22,3 +22,11 @@ Progress is staged, so percentage reflects work reported for the current snapsho
 ## Embeddings and vector indexing
 
 `providers/embeddings.py` embeds batches under the selected profile. `services/qdrant_index.py` synchronizes vector points using the profile dimension, source identifiers and filter metadata. PostgreSQL keeps chunk text and relationships and can retain compatible vectors for the pgvector path. The worker records synchronization state so failures can be diagnosed and repaired. Qdrant is a rebuildable search index, with original bytes and canonical metadata stored separately.
+
+
+## v2 Upgrade Highlights
+
+- **Contextual Retrieval & Small-to-Big Chunking**: `CHUNKING_STRATEGY=hierarchical` pairs ~1,000-token parent windows with ~250-token child chunks and prepends contextual headers before embedding and FTS indexing.
+- **Isolated OCR Queue & Vision Fallback**: Scanned PDFs route to `ingest-ocr` (`worker-ocr`, `mem_limit: 2g`) while fast uploads finish immediately on `ingest-fast`; low-confidence Tesseract pages (`< 65%`) fall back to a vision-capable LLM.
+- **Multilingual FTS + Trigrams**: `document_chunks.search_vector` uses `'simple'` tokenization plus a `pg_trgm` GIN index.
+- See [Production Upgrade (v2)](/docs/upgrade) for full details.

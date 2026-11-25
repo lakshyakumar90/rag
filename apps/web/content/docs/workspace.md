@@ -16,3 +16,10 @@ Enable agent mode when you want available tools to help answer a question. The a
 ## Share or restrict access
 
 Invite teammates from **Members**. Workspace roles govern administrative capabilities. A document can be workspace-visible or restricted with explicit grants. After changing a grant, check the result using the account whose access changed.
+
+
+## v2 Workspace UI Surfaces
+
+- **Split-Screen Citation Viewer & Confidence Badges**: Click any `[n]` citation pill in chat to inspect the PDF page or highlighted Markdown/code passage, and hover over `High / Medium / Low` confidence badges for score breakdowns.
+- **Retrieval Inspector Drawer**: Click `Inspect` on an assistant message to view rewritten queries, cache hit/miss, latency, and per-chunk dense/lexical/RRF/rerank scores.
+- **Evals & Cognitive Memory**: Access `/workspaces/[id]/evals` and `/workspaces/[id]/memory` directly from the workspace sidebar.
