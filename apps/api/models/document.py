@@ -182,6 +182,10 @@ class DocumentChunk(BaseModel):
     # None for formats without real pages (TXT/MD/DOCX).
     page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    parent_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    context_header: Mapped[str | None] = mapped_column(Text, nullable=True)
+    char_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    char_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Ordered headings, e.g. ["Guide", "Install"]; null for unheaded formats.
     heading_path: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     token_count: Mapped[int] = mapped_column(

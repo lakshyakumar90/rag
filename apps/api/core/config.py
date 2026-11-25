@@ -301,8 +301,17 @@ class Settings(BaseSettings):
     chunk_overlap_tokens: int = Field(
         default=50, validation_alias="CHUNK_OVERLAP_TOKENS"
     )
-    chunking_strategy: Literal["auto", "fixed", "paragraph", "heading"] = Field(
-        default="auto", validation_alias="CHUNKING_STRATEGY"
+    chunking_strategy: Literal[
+        "auto", "fixed", "paragraph", "heading", "hierarchical"
+    ] = Field(default="auto", validation_alias="CHUNKING_STRATEGY")
+    chunk_parent_tokens: int = Field(
+        default=1000, validation_alias="CHUNK_PARENT_TOKENS"
+    )
+    chunk_child_tokens: int = Field(
+        default=250, validation_alias="CHUNK_CHILD_TOKENS"
+    )
+    contextual_retrieval_enabled: bool = Field(
+        default=False, validation_alias="CONTEXTUAL_RETRIEVAL_ENABLED"
     )
     chunk_insert_batch_size: int = Field(
         default=100, validation_alias="CHUNK_INSERT_BATCH_SIZE"

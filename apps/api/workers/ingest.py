@@ -42,6 +42,59 @@ class _IndexChunk:
     embedding: list[float] | None
 
 
+def _fallback_context_header(
+    filename: str,
+    heading_path: tuple[str, ...],
+    parent_text: str | None,
+) -> str:
+    """Deterministic structural context header when no LLM is configured."""
+    parts = [f"Document: {filename}."]
+    if heading_path:
+        parts.append(f"Section: {' > '.join(heading_path)}.")
+    if parent_text:
+        lead = " ".join(parent_text.split()[:24]).strip()
+        if lead:
+            parts.append(f"Context: {lead}.")
+    return " ".join(parts)
+
+
+async def generate_context_header(
+    filename: str,
+    heading_path: tuple[str, ...],
+    parent_text: str | None,
+    child_text: str,
+    llm_provider=None,
+) -> str:
+    """Generate a concise 1-2 sentence contextual retrieval header for a chunk."""
+    if llm_provider is not None:
+        section_label = " > ".join(heading_path) if heading_path else "General"
+        prompt = (
+            f"Document: {filename}\nSection: {section_label}\n"
+            f"Surrounding section:\n{(parent_text or child_text)[:1500]}\n\n"
+            f"Chunk:\n{child_text[:600]}\n\n"
+            "Write a concise 1-2 sentence context header naming the document, "
+            "section, key entities, and timeframe so this chunk is self-contained "
+            "for search. Output only the context sentences."
+        )
+        try:
+            from providers.llm.types import ChatMessage, LLMRequest
+
+            resp = await llm_provider.complete(
+                LLMRequest(
+                    messages=[ChatMessage(role="user", content=prompt)],
+                    max_tokens=96,
+                    temperature=0.0,
+                )
+            )
+            header = (resp.text or "").strip()
+            if header:
+                return header[:500]
+        except Exception as exc:
+            logger.debug("contextual header LLM fallback: %s", exc)
+    return _fallback_context_header(filename, heading_path, parent_text)
+
+
+
 async def _update_progress(
     factory: async_sessionmaker[AsyncSession], document_id: uuid.UUID, **progress
 ) -> bool:
@@ -168,6 +221,7 @@ async def _process(
         workspace_id = document.workspace_id
         storage_key = document.storage_key
         mime_type = document.mime_type
+        filename = document.filename
         document.status = DocumentStatus.PROCESSING
         document.error = None
         document.ingestion_stage = "reading"
@@ -213,7 +267,20 @@ async def _process(
         settings.chunking_strategy,
         settings.chunk_target_tokens,
         settings.chunk_overlap_tokens,
+        settings.chunk_parent_tokens,
+        settings.chunk_child_tokens,
     )
+    context_headers: list[str | None] = [None] * len(chunks)
+    if settings.contextual_retrieval_enabled and chunks:
+        context_headers = [
+            await generate_context_header(
+                filename,
+                chunk.heading_path,
+                chunk.parent_text,
+                chunk.text,
+            )
+            for chunk in chunks
+        ]
     if not await _update_progress(
         factory,
         document_id,
@@ -227,12 +294,21 @@ async def _process(
     ):
         return
 
+    def _contextualized_text(chunk_text: str, header: str | None) -> str:
+        return f"{header}\n\n{chunk_text}" if header else chunk_text
+
     vectors: list[list[float]] = []
     embed_batch_size = max(1, settings.embedding_batch_size)
     for start in range(0, len(chunks), embed_batch_size):
         batch = chunks[start : start + embed_batch_size]
+        batch_headers = context_headers[start : start + embed_batch_size]
         vectors.extend(
-            await embeddings.embed_documents([chunk.text for chunk in batch])
+            await embeddings.embed_documents(
+                [
+                    _contextualized_text(chunk.text, header)
+                    for chunk, header in zip(batch, batch_headers, strict=True)
+                ]
+            )
         )
         if not await _update_progress(
             factory, document_id, chunks_embedded=len(vectors)
@@ -254,7 +330,7 @@ async def _process(
             delete(DocumentChunk).where(DocumentChunk.document_id == document_id)
         )
         batch_size = max(1, settings.chunk_insert_batch_size)
-        pairs = list(zip(chunks, vectors, strict=True))
+        pairs = list(zip(chunks, vectors, context_headers, strict=True))
         sqlite = session.bind is not None and session.bind.dialect.name == "sqlite"
         for start in range(0, len(pairs), batch_size):
             batch = pairs[start : start + batch_size]
@@ -265,14 +341,20 @@ async def _process(
                     chunk_index=chunk.index,
                     page_number=chunk.page_number,
                     content=chunk.text,
+                    parent_content=chunk.parent_text,
+                    context_header=header,
+                    char_start=chunk.char_start,
+                    char_end=chunk.char_end,
                     heading_path=list(chunk.heading_path) or None,
                     token_count=chunk.token_count,
                     embedding=vector,
-                    search_vector=" ".join(chunk.text.lower().split())
+                    search_vector=" ".join(
+                        _contextualized_text(chunk.text, header).lower().split()
+                    )
                     if sqlite
                     else None,
                 )
-                for chunk, vector in batch
+                for chunk, vector, header in batch
             ]
             session.add_all(added)
             await session.flush()

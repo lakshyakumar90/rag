@@ -26,6 +26,10 @@ class SearchResult(BaseModel):
     rrf_score: float | None = None
     rerank_score: float | None = None
     retrieval_ms: float | None = None
+    parent_content: str | None = None
+    context_header: str | None = None
+    char_start: int | None = None
+    char_end: int | None = None
 
 
 class SearchResponse(BaseModel):

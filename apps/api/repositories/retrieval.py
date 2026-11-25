@@ -24,6 +24,10 @@ class ScoredChunk:
     lexical_score: float | None = None
     rrf_score: float | None = None
     rerank_score: float | None = None
+    parent_content: str | None = None
+    context_header: str | None = None
+    char_start: int | None = None
+    char_end: int | None = None
 
 
 def _filter_clause(document_ids: list[uuid.UUID] | None) -> tuple[str, dict]:
@@ -100,6 +104,10 @@ class RetrievalRepository:
                     page_number=chunk.page_number,
                     heading_path=chunk.heading_path,
                     score=_cosine(vector, chunk.embedding or []),
+                    parent_content=chunk.parent_content,
+                    context_header=chunk.context_header,
+                    char_start=chunk.char_start,
+                    char_end=chunk.char_end,
                 )
                 for chunk, filename in result.all()
             ]
@@ -110,7 +118,8 @@ class RetrievalRepository:
         sql = text(
             f"""
             SELECT dc.id, dc.document_id, d.filename, dc.content, dc.page_number,
-                   dc.heading_path, 1 - (dc.embedding <=> :vector) AS score
+                   dc.heading_path, 1 - (dc.embedding <=> :vector) AS score,
+                   dc.parent_content, dc.context_header, dc.char_start, dc.char_end
             FROM document_chunks dc
             JOIN documents d ON d.id = dc.document_id
             WHERE dc.workspace_id = :workspace_id
@@ -160,8 +169,10 @@ class RetrievalRepository:
             terms = {term.lower() for term in query.split() if len(term) > 1}
             scored = []
             for chunk, filename in result.all():
-                content = chunk.content.lower()
-                matches = sum(1 for term in terms if term in content)
+                searchable = (
+                    f"{chunk.context_header or ''} {chunk.content}".lower()
+                )
+                matches = sum(1 for term in terms if term in searchable)
                 if matches:
                     scored.append(
                         ScoredChunk(
@@ -172,6 +183,10 @@ class RetrievalRepository:
                             page_number=chunk.page_number,
                             heading_path=chunk.heading_path,
                             score=matches / max(1, len(terms)),
+                            parent_content=chunk.parent_content,
+                            context_header=chunk.context_header,
+                            char_start=chunk.char_start,
+                            char_end=chunk.char_end,
                         )
                     )
             return sorted(_positive(scored), key=lambda item: item.score, reverse=True)[
@@ -183,7 +198,8 @@ class RetrievalRepository:
             SELECT dc.id, dc.document_id, d.filename, dc.content, dc.page_number,
                    dc.heading_path,
                    ts_rank_cd(dc.search_vector,
-                              websearch_to_tsquery('english', :query)) AS score
+                              websearch_to_tsquery('english', :query)) AS score,
+                   dc.parent_content, dc.context_header, dc.char_start, dc.char_end
             FROM document_chunks dc
             JOIN documents d ON d.id = dc.document_id
             WHERE dc.workspace_id = :workspace_id
@@ -276,6 +292,10 @@ class RetrievalRepository:
                     page_number=chunk.page_number,
                     heading_path=chunk.heading_path,
                     score=scores[chunk.id],
+                    parent_content=chunk.parent_content,
+                    context_header=chunk.context_header,
+                    char_start=chunk.char_start,
+                    char_end=chunk.char_end,
                 )
             )
         return sorted(verified, key=lambda item: item.score, reverse=True)
@@ -290,4 +310,8 @@ class RetrievalRepository:
             page_number=row[4],
             heading_path=row[5],
             score=float(row[6]),
+            parent_content=row[7] if len(row) > 7 else None,
+            context_header=row[8] if len(row) > 8 else None,
+            char_start=row[9] if len(row) > 9 else None,
+            char_end=row[10] if len(row) > 10 else None,
         )

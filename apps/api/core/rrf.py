@@ -51,6 +51,10 @@ def reciprocal_rank_fusion(
                 lexical_score=lexical_scores.get(chunk_id, item.lexical_score),
                 rrf_score=round(total, 6),
                 rerank_score=item.rerank_score,
+                parent_content=item.parent_content,
+                context_header=item.context_header,
+                char_start=item.char_start,
+                char_end=item.char_end,
             )
         )
     return sorted(fused, key=lambda item: item.score, reverse=True)

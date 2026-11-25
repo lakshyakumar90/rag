@@ -7,7 +7,7 @@ from typing import Literal
 from workers.extraction import ExtractedSection, ExtractionResult
 from workers.tokenization import count_tokens
 
-Strategy = Literal["auto", "fixed", "paragraph", "heading"]
+Strategy = Literal["auto", "fixed", "paragraph", "heading", "hierarchical"]
 
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?。！？])\s+")
 
@@ -19,6 +19,10 @@ class Chunk:
     text: str
     heading_path: tuple[str, ...] = ()
     token_count: int = 0
+    parent_text: str | None = None
+    context_header: str | None = None
+    char_start: int | None = None
+    char_end: int | None = None
 
 
 @dataclass(frozen=True)
@@ -154,15 +158,84 @@ def _pack(atoms: list[str], target: int, overlap: int) -> list[tuple[str, int]]:
     return pieces
 
 
+def chunk_hierarchical(
+    result: ExtractionResult,
+    parent_target_tokens: int = 1000,
+    parent_overlap_tokens: int = 100,
+    child_target_tokens: int = 250,
+    child_overlap_tokens: int = 30,
+) -> list[Chunk]:
+    """Small-to-Big chunking (~1,000-token parents, ~250-token children)."""
+    if parent_target_tokens < 1 or child_target_tokens < 1:
+        raise ValueError("parent and child target tokens must be positive")
+    if child_overlap_tokens < 0 or child_overlap_tokens >= child_target_tokens:
+        raise ValueError("child overlap must be non-negative and smaller than target")
+    if parent_overlap_tokens < 0 or parent_overlap_tokens >= parent_target_tokens:
+        raise ValueError("parent overlap must be non-negative and smaller than target")
+
+    sources = result.sections or [
+        ExtractedSection(page.page_number, (), page.text) for page in result.pages
+    ]
+    chunks: list[Chunk] = []
+    for section in sources:
+        parent_pieces = _pack(
+            _atoms(section.text, parent_target_tokens),
+            parent_target_tokens,
+            parent_overlap_tokens,
+        )
+        section_cursor = 0
+        for parent_text, _ in parent_pieces:
+            if not parent_text:
+                continue
+            child_pieces = _pack(
+                _atoms(parent_text, child_target_tokens),
+                child_target_tokens,
+                child_overlap_tokens,
+            )
+            for child_text, tokens in child_pieces:
+                if not child_text:
+                    continue
+                pos = section.text.find(child_text[:80], section_cursor)
+                char_start = pos if pos >= 0 else None
+                char_end = (pos + len(child_text)) if pos >= 0 else None
+                if pos >= 0:
+                    section_cursor = pos + max(1, len(child_text) // 2)
+                chunks.append(
+                    Chunk(
+                        page_number=section.page_number,
+                        index=len(chunks),
+                        text=child_text,
+                        heading_path=section.heading_path,
+                        token_count=tokens,
+                        parent_text=parent_text,
+                        char_start=char_start,
+                        char_end=char_end,
+                    )
+                )
+    return chunks
+
+
 def chunk_document(
     result: ExtractionResult,
     strategy: Strategy = "auto",
     target_tokens: int = 500,
     overlap_tokens: int = 50,
+    parent_target_tokens: int = 1000,
+    child_target_tokens: int = 250,
 ) -> list[Chunk]:
     """Chunk an extracted document; ``auto`` picks heading-aware when possible."""
-    if strategy not in ("auto", "fixed", "paragraph", "heading"):
+    if strategy not in ("auto", "fixed", "paragraph", "heading", "hierarchical"):
         raise ValueError(f"unknown chunking strategy: {strategy}")
+    if strategy == "hierarchical":
+        return chunk_hierarchical(
+            result,
+            parent_target_tokens=parent_target_tokens,
+            parent_overlap_tokens=min(100, max(0, parent_target_tokens // 10)),
+            child_target_tokens=child_target_tokens,
+            child_overlap_tokens=min(
+                overlap_tokens, max(0, child_target_tokens - 1)
+            ),
+        )
     if target_tokens < 1 or overlap_tokens < 0 or overlap_tokens >= target_tokens:
         raise ValueError("overlap must be non-negative and smaller than target")
     if strategy == "auto":

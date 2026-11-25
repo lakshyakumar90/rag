@@ -257,6 +257,10 @@ class RetrievalService:
                         lexical_score=original.lexical_score,
                         rrf_score=original.rrf_score,
                         rerank_score=score.score,
+                        parent_content=original.parent_content,
+                        context_header=original.context_header,
+                        char_start=original.char_start,
+                        char_end=original.char_end,
                     )
                 )
         if not reranked:
@@ -280,4 +284,8 @@ class RetrievalService:
             rrf_score=item.rrf_score,
             rerank_score=item.rerank_score,
             retrieval_ms=retrieval_ms,
+            parent_content=item.parent_content,
+            context_header=item.context_header,
+            char_start=item.char_start,
+            char_end=item.char_end,
         )

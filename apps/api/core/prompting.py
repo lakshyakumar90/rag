@@ -110,10 +110,27 @@ def build_context(
 
     sources: list[Source] = []
     blocks: list[str] = []
+    seen_parents: dict[tuple[uuid.UUID, str], int] = {}
     used = 0
     truncated = False
     for result in results:
         number = len(sources) + 1
+        parent_text = getattr(result, "parent_content", None)
+        if parent_text:
+            parent_key = (result.document_id, parent_text.strip())
+            if parent_key in seen_parents:
+                # Sibling child chunk from the same parent window: keep exact child
+                # excerpt + citation number without duplicating the full parent window.
+                packed_raw = (
+                    f"[See parent section in source {seen_parents[parent_key]}] "
+                    f"{result.text}"
+                )
+            else:
+                seen_parents[parent_key] = number
+                packed_raw = parent_text
+        else:
+            packed_raw = result.text
+
         source = Source(
             number=number,
             chunk_id=result.chunk_id,
@@ -121,7 +138,7 @@ def build_context(
             filename=result.filename,
             page_number=result.page_number,
             heading_path=result.heading_path,
-            text=sanitize_context_text(result.text),
+            text=sanitize_context_text(packed_raw),
         )
         opening = _source_header(source)
         closing = "</source>\n"
