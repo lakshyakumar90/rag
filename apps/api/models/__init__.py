@@ -5,6 +5,7 @@ from models.conversation import Conversation, Message
 from models.document import Document, DocumentChunk
 from models.enums import DocumentStatus, InvitationStatus, MembershipRole
 from models.evals import EvalCase, EvalDataset, EvalResult, EvalRun
+from models.graph import Entity, EntityEdge
 from models.invitation import Invitation
 from models.membership import Membership
 from models.memory import WorkspaceMemory
@@ -24,6 +25,8 @@ __all__ = [
     "Document",
     "DocumentGrant",
     "EmbeddingProfile",
+    "Entity",
+    "EntityEdge",
     "DocumentChunk",
     "DocumentStatus",
     "EvalCase",

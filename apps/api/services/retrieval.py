@@ -106,7 +106,13 @@ class RetrievalService:
             workspace_id, query, candidate_k, document_ids
         )
 
-        fused = reciprocal_rank_fusion(vector_hits, keyword_hits, k=settings.rrf_k)
+        graph_hits = await self._graph_candidates(
+            workspace_id, query, document_ids, candidate_k
+        )
+        rankings = [vector_hits, keyword_hits]
+        if graph_hits:
+            rankings.append(graph_hits)
+        fused = reciprocal_rank_fusion(*rankings, k=settings.rrf_k)
         fused, reranked = await self._rerank(query, fused)
         fused = fused[: top_k or settings.retrieval_top_k]
 
@@ -191,6 +197,24 @@ class RetrievalService:
                 config_json=config,
             )
         )
+
+    async def _graph_candidates(
+        self,
+        workspace_id: uuid.UUID,
+        query: str,
+        document_ids: list[uuid.UUID] | None,
+        limit: int,
+    ) -> list[ScoredChunk]:
+        """Permission-aware 1-2 hop Postgres entity graph candidate expansion."""
+        try:
+            from services.graph import GraphService
+
+            return await GraphService(self._session).find_2hop_chunks(
+                workspace_id, query, allowed_document_ids=document_ids, limit=limit
+            )
+        except Exception as exc:
+            logger.debug("graph lookup skipped: %s", exc)
+            return []
 
     async def _vector_candidates(
         self,

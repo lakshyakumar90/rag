@@ -369,6 +369,19 @@ async def _process(
             )
             document.chunks_done = len(chunk_rows)
             await session.flush()
+        try:
+            from services.graph import GraphService
+
+            await GraphService(session).index_document_chunks(
+                workspace_id,
+                document_id,
+                [
+                    (row.id, chunk.text)
+                    for row, (chunk, _, _) in zip(added, batch, strict=False)
+                ],
+            )
+        except Exception as exc:
+            logger.debug("graph extraction skipped: %s", exc)
         await session.commit()
 
     async def _indexed(written: int) -> None:
