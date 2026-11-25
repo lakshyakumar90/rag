@@ -9,6 +9,7 @@ from api.v1.endpoints.cli import router as cli_router
 from api.v1.endpoints.conversations import router as conversations_router
 from api.v1.endpoints.documents import router as documents_router
 from api.v1.endpoints.embedding_profiles import router as embedding_profiles_router
+from api.v1.endpoints.evals import promote_router as evals_promote_router
 from api.v1.endpoints.evals import router as evals_router
 from api.v1.endpoints.invitations import router as invitations_router
 from api.v1.endpoints.production import router as production_router
@@ -34,6 +35,7 @@ router.include_router(ai_router)
 router.include_router(agent_router)
 router.include_router(embedding_profiles_router)
 router.include_router(evals_router)
+router.include_router(evals_promote_router)
 
 
 @router.get("/ping")

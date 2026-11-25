@@ -7,6 +7,7 @@ from sqlalchemy import (
     JSON,
     Boolean,
     CheckConstraint,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -80,6 +81,10 @@ class Message(BaseModel):
     )
     # False marks an "I don't know" answer (low-confidence retrieval).
     answerable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    confidence_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    confidence_level: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    confidence_breakdown: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    retrieval_diagnostics: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")
 

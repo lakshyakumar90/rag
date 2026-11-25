@@ -26,6 +26,13 @@ class SourceRef(BaseModel):
     # "workspace" citations point at a chunk; "web" citations carry a URL.
     source_type: str = "workspace"
     url: str | None = None
+    excerpt: str | None = None
+    char_start: int | None = None
+    char_end: int | None = None
+    dense_rank: int | None = None
+    lexical_rank: int | None = None
+    rrf_score: float | None = None
+    rerank_score: float | None = None
 
 
 class Citation(SourceRef):
@@ -41,3 +48,7 @@ class ChatResponse(BaseModel):
     citations: list[Citation]
     sources: list[SourceRef]
     conversation_id: uuid.UUID | None = None
+    confidence_score: float | None = None
+    confidence_level: str | None = None
+    confidence_breakdown: dict | None = None
+    retrieval_diagnostics: dict | None = None

@@ -4,9 +4,12 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.v1.dependencies import (
+    AdminContext,
     MemberContext,
     get_embedding_provider,
     get_job_queue,
@@ -243,4 +246,101 @@ async def get_run_detail(
         **_to_run_response(run).model_dump(),
         results=mapped,
         failures=[row for row in mapped if not row.passed],
+    )
+
+
+promote_router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["evals"])
+
+
+class PromoteToEvalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    dataset_id: uuid.UUID | None = None
+    expected_answer: str | None = None
+    expected_document_ids: list[str] | None = None
+
+
+@promote_router.post(
+    "/messages/{message_id}/promote-to-eval",
+    response_model=EvalCaseResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def promote_message_to_eval(
+    message_id: uuid.UUID,
+    context: AdminContext,
+    session: SessionDep,
+    payload: PromoteToEvalRequest | None = None,
+) -> EvalCaseResponse:
+    from models import Conversation, EvalDataset, Message
+
+    body = payload or PromoteToEvalRequest()
+    msg = (
+        await session.execute(
+            select(Message)
+            .join(Conversation, Conversation.id == Message.conversation_id)
+            .where(
+                Message.id == message_id,
+                Conversation.workspace_id == context.workspace.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if msg is None:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    # Find the preceding user message in the same conversation
+    prev_user = (
+        await session.execute(
+            select(Message)
+            .where(
+                Message.conversation_id == msg.conversation_id,
+                Message.role == "user",
+                Message.sequence < msg.sequence,
+            )
+            .order_by(Message.sequence.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    question = prev_user.content if prev_user is not None else msg.content
+
+    service = EvalService(session)
+    dataset_id = body.dataset_id
+    if dataset_id is None:
+        existing = (
+            await session.execute(
+                select(EvalDataset)
+                .where(
+                    EvalDataset.workspace_id == context.workspace.id,
+                    EvalDataset.name == "Feedback Regression Suite",
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if existing is None:
+            existing = await service.create_dataset(
+                context.workspace.id,
+                context.user.id,
+                name="Feedback Regression Suite",
+                description="Cases promoted from thumbs-down chat answers.",
+            )
+        dataset_id = existing.id
+
+    case = await service.add_case(
+        context.workspace.id,
+        dataset_id,
+        question=question,
+        expected_answer=body.expected_answer,
+        expected_document_ids=body.expected_document_ids,
+        source_message_id=msg.id,
+    )
+    return EvalCaseResponse(
+        id=case.id,
+        dataset_id=case.dataset_id,
+        workspace_id=case.workspace_id,
+        question=case.question,
+        expected_answer=case.expected_answer,
+        expected_document_ids=case.expected_document_ids,
+        expected_chunk_ids=case.expected_chunk_ids,
+        expected_keywords=case.expected_keywords,
+        source_message_id=case.source_message_id,
+        created_at=case.created_at,
     )

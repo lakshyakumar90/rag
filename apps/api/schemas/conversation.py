@@ -50,4 +50,8 @@ class MessageResponse(BaseModel):
     output_tokens: int
     latency_ms: int
     tokens_estimated: bool
+    confidence_score: float | None = None
+    confidence_level: str | None = None
+    confidence_breakdown: dict | None = None
+    retrieval_diagnostics: dict | None = None
     created_at: datetime

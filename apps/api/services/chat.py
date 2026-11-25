@@ -13,6 +13,7 @@ from providers.llm.registry import create_llm_provider
 from providers.llm.types import ChatMessage, Error, TextDelta, Usage
 from schemas import ChatResponse, Citation, SourceRef
 from services.ai_settings import AISettingsService
+from services.confidence import compute_answer_confidence
 from services.conversations import ConversationService
 from services.retrieval import RetrievalService
 from services.workspaces import WorkspaceContext
@@ -221,6 +222,32 @@ class ChatService:
             if close:
                 await close()
 
+        is_answerable = answer_text != "I don't know"
+        confidence = await compute_answer_confidence(
+            answer=answer_text,
+            answerable=is_answerable,
+            search_items=search.items,
+            valid_source_numbers={s.number for s in sources},
+        )
+        diagnostics = {
+            "rewritten_query": effective_query,
+            "retrieval_ms": search.retrieval_ms,
+            "reranked": search.reranked,
+            "cache_hit": search.cache_hit,
+            "chunks": [
+                {
+                    "chunk_id": str(item.chunk_id),
+                    "filename": item.filename,
+                    "page_number": item.page_number,
+                    "dense_rank": item.dense_rank,
+                    "lexical_rank": item.lexical_rank,
+                    "rrf_score": item.rrf_score,
+                    "rerank_score": item.rerank_score,
+                    "score": item.score,
+                }
+                for item in search.items
+            ],
+        }
         if conversation is not None and conversations is not None:
             await self._persist(
                 conversations,
@@ -232,18 +259,26 @@ class ChatService:
                 usage,
                 latency,
                 new_title,
-                answerable=answer_text != "I don't know",
+                answerable=is_answerable,
                 model=model,
+                confidence_score=confidence.score,
+                confidence_level=confidence.level,
+                confidence_breakdown=confidence.breakdown,
+                retrieval_diagnostics=diagnostics,
             )
 
         return ChatResponse(
             answer=answer_text,
-            answerable=answer_text != "I don't know",
+            answerable=is_answerable,
             provider=provider_name,
             model=model,
             citations=citations,
             sources=sources,
             conversation_id=conversation_id,
+            confidence_score=confidence.score,
+            confidence_level=confidence.level,
+            confidence_breakdown=confidence.breakdown,
+            retrieval_diagnostics=diagnostics,
         )
 
     async def _persist(
@@ -260,6 +295,10 @@ class ChatService:
         prompt_text: str = "",
         answerable: bool | None = None,
         model: str | None = None,
+        confidence_score: float | None = None,
+        confidence_level: str | None = None,
+        confidence_breakdown: dict | None = None,
+        retrieval_diagnostics: dict | None = None,
     ) -> None:
         model = model or _model_name(provider_name)
         tokens_estimated = usage is None
@@ -287,6 +326,10 @@ class ChatService:
             latency_ms=latency,
             tokens_estimated=tokens_estimated,
             answerable=answerable,
+            confidence_score=confidence_score,
+            confidence_level=confidence_level,
+            confidence_breakdown=confidence_breakdown,
+            retrieval_diagnostics=retrieval_diagnostics,
         )
         if new_title:
             conversation.title = new_title
@@ -318,6 +361,8 @@ class ChatService:
         prompt_text = ""
         new_title: str | None = None
         answerable = False
+        confidence_result = None
+        diagnostics: dict | None = None
 
         if conversation_id is not None:
             if conversations is None:
@@ -352,9 +397,41 @@ class ChatService:
             if is_disconnected and await is_disconnected():
                 return
 
+            diagnostics = {
+                "rewritten_query": effective_query,
+                "retrieval_ms": search.retrieval_ms,
+                "reranked": search.reranked,
+                "cache_hit": search.cache_hit,
+                "chunks": [
+                    {
+                        "chunk_id": str(item.chunk_id),
+                        "filename": item.filename,
+                        "page_number": item.page_number,
+                        "dense_rank": item.dense_rank,
+                        "lexical_rank": item.lexical_rank,
+                        "rrf_score": item.rrf_score,
+                        "rerank_score": item.rerank_score,
+                        "score": item.score,
+                    }
+                    for item in search.items
+                ],
+            }
             if not search.answerable or not search.items:
                 final_text = "I don't know"
+                confidence_result = await compute_answer_confidence(
+                    answer=final_text,
+                    answerable=False,
+                    search_items=search.items,
+                    valid_source_numbers=set(),
+                )
                 yield {"type": "token", "text": final_text}
+                yield {
+                    "type": "confidence",
+                    "confidence_score": confidence_result.score,
+                    "confidence_level": confidence_result.level,
+                    "confidence_breakdown": confidence_result.breakdown,
+                    "retrieval_diagnostics": diagnostics,
+                }
                 yield {
                     "type": "done",
                     "answer": final_text,
@@ -445,6 +522,20 @@ class ChatService:
                 )
                 for item in parse_citations(final_text, built.sources)
             ]
+            confidence_result = await compute_answer_confidence(
+                answer=final_text,
+                answerable=answerable,
+                search_items=search.items,
+                valid_source_numbers={s.number for s in sources},
+                context_text=built.text,
+            )
+            yield {
+                "type": "confidence",
+                "confidence_score": confidence_result.score,
+                "confidence_level": confidence_result.level,
+                "confidence_breakdown": confidence_result.breakdown,
+                "retrieval_diagnostics": diagnostics,
+            }
             yield {
                 "type": "done",
                 "answer": final_text,
@@ -493,6 +584,16 @@ class ChatService:
                     prompt_text,
                     answerable=final_text != "I don't know",
                     model=model,
+                    confidence_score=(
+                        confidence_result.score if confidence_result else None
+                    ),
+                    confidence_level=(
+                        confidence_result.level if confidence_result else None
+                    ),
+                    confidence_breakdown=(
+                        confidence_result.breakdown if confidence_result else None
+                    ),
+                    retrieval_diagnostics=diagnostics,
                 )
             if conversation is not None:
                 active_streams.pop(conversation.id, None)
@@ -532,4 +633,11 @@ class ChatService:
             filename=item.filename,
             page_number=item.page_number,
             heading_path=item.heading_path,
+            excerpt=getattr(item, "text", None),
+            char_start=getattr(item, "char_start", None),
+            char_end=getattr(item, "char_end", None),
+            dense_rank=getattr(item, "dense_rank", None),
+            lexical_rank=getattr(item, "lexical_rank", None),
+            rrf_score=getattr(item, "rrf_score", None),
+            rerank_score=getattr(item, "rerank_score", None),
         )

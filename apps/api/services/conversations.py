@@ -111,6 +111,10 @@ class ConversationService:
         latency_ms: int = 0,
         tokens_estimated: bool = False,
         answerable: bool | None = None,
+        confidence_score: float | None = None,
+        confidence_level: str | None = None,
+        confidence_breakdown: dict | None = None,
+        retrieval_diagnostics: dict | None = None,
         commit: bool = True,
     ) -> Message:
         message = Message(
@@ -118,6 +122,10 @@ class ConversationService:
             role=role,
             content=content,
             citations=citations,
+            confidence_score=confidence_score,
+            confidence_level=confidence_level,
+            confidence_breakdown=confidence_breakdown,
+            retrieval_diagnostics=retrieval_diagnostics,
             provider=provider,
             model=model,
             input_tokens=input_tokens,

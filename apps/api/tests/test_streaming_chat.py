@@ -137,6 +137,7 @@ async def test_stream_events_and_persistence(
             "sources",
             "token",
             "token",
+            "confidence",
             "done",
         ]
         assert events[0]["sources"][0]["filename"] == "a.txt"
