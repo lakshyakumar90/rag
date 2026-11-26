@@ -199,6 +199,17 @@ class WorkspaceService:
 
         query = urlencode({"token": token})
         accept_url = f"{get_settings().invitation_accept_base_url}?{query}"
+        try:
+            from services.invitations import InvitationEmailService
+
+            await InvitationEmailService().send_invite(
+                to_email=invitation.email,
+                workspace_name=context.workspace.name,
+                inviter_email=context.user.email,
+                accept_url=accept_url,
+            )
+        except Exception:
+            pass
         return InvitationCreatedResponse(
             id=invitation.id,
             workspace_id=invitation.workspace_id,

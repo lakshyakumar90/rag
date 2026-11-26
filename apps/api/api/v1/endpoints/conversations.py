@@ -18,7 +18,7 @@ from schemas import (
     MessageResponse,
 )
 from services import ChatService, ConversationService
-from services.chat import cancel_stream
+from services.chat import publish_cancel_stream
 
 router = APIRouter(prefix="/workspaces", tags=["conversations"])
 
@@ -117,7 +117,7 @@ async def stop_stream(
     service: Annotated[ConversationService, Depends(get_conversation_service)],
 ) -> dict[str, bool]:
     await service.get(context, conversation_id)  # verify ownership
-    return {"cancelled": cancel_stream(conversation_id)}
+    return {"cancelled": await publish_cancel_stream(conversation_id)}
 
 
 @router.post(

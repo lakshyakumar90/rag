@@ -134,7 +134,16 @@ class AgentService:
 
                 tool = plan.get("tool")
                 if not tool:
-                    answer = str(plan.get("answer", "I don't know"))
+                    draft = str(plan.get("answer", "I don't know"))
+                    if steps >= 2 and len(draft) >= 200:
+                        evidence = "\n".join(
+                            m.content for m in messages if m.role == "user"
+                        )
+                        answer = await self_critique_answer(
+                            request.query, draft, evidence, llm=provider
+                        )
+                    else:
+                        answer = draft
                     break
                 if steps >= max_steps:
                     answer = "I reached the step limit before finishing."
@@ -150,11 +159,26 @@ class AgentService:
                     }
                 )
                 try:
-                    result = await asyncio.wait_for(
-                        tools.run(str(tool), plan.get("arguments") or {}),
-                        timeout=max(1.0, deadline - time.monotonic()),
-                    )
-                    payload = result.model_dump(mode="json")
+                    args = plan.get("arguments") or {}
+                    if str(tool) == "decompose_query":
+                        subs = await decompose_query(
+                            str(args.get("query") or request.query), llm=provider
+                        )
+                        payload = {"sub_queries": subs}
+                    elif str(tool) == "compare_documents":
+                        import uuid as _uuid
+
+                        doc_ids = [
+                            _uuid.UUID(str(d)) for d in (args.get("document_ids") or [])
+                        ]
+                        criteria = [str(c) for c in (args.get("criteria") or [])]
+                        payload = await tools.compare_documents(doc_ids, criteria)
+                    else:
+                        result = await asyncio.wait_for(
+                            tools.run(str(tool), args),
+                            timeout=max(1.0, deadline - time.monotonic()),
+                        )
+                        payload = result.model_dump(mode="json")
                 except Exception as exc:  # noqa: BLE001 - tool failure is a result
                     logger.warning("agent tool %s failed: %s", tool, exc)
                     payload = {"error": str(exc)[:300]}

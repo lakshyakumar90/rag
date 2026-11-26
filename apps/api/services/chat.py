@@ -7,7 +7,12 @@ import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 
 from core.config import get_settings
-from core.prompting import SYSTEM_PROMPT, build_context, parse_citations
+from core.prompting import (
+    SYSTEM_PROMPT,
+    build_context,
+    build_memory_block,
+    parse_citations,
+)
 from providers.llm.base import LLMProvider
 from providers.llm.registry import create_llm_provider
 from providers.llm.types import ChatMessage, Error, TextDelta, Usage
@@ -125,6 +130,21 @@ class ChatService:
         self._conversations = conversations
         self._defaults = defaults
 
+    async def _memory_block(self, context: WorkspaceContext) -> str:
+        """Load active workspace memories + procedural rules into isolated <memory>."""
+        session = getattr(self._retrieval, "_session", None)
+        if session is None:
+            return ""
+        try:
+            from services.memory import MemoryService
+
+            memories, rules = await MemoryService(session).retrieve_for_prompt(
+                context.workspace.id, top_k=5
+            )
+            return build_memory_block(memories, rules)
+        except Exception:
+            return ""
+
     async def _create_provider(self, context: WorkspaceContext, name: str):
         if name.startswith("config:") and self._defaults is not None:
             return await self._defaults.provider_for(context.user.id, name)
@@ -206,7 +226,13 @@ class ChatService:
                 answer_text = "I don't know"
                 citations, sources, usage, latency = [], sources_refs, None, 0
             else:
-                messages = [ChatMessage(role="system", content=SYSTEM_PROMPT)]
+                memory_block = await self._memory_block(context)
+                sys_prompt = (
+                    f"{SYSTEM_PROMPT}\n\n{memory_block}"
+                    if memory_block
+                    else SYSTEM_PROMPT
+                )
+                messages = [ChatMessage(role="system", content=sys_prompt)]
                 if conversation is not None:
                     assert conversations is not None
                     for item in conversations.truncate_history(history):
@@ -412,6 +438,7 @@ class ChatService:
         answerable = False
         confidence_result = None
         diagnostics: dict | None = None
+        cancel_watcher: asyncio.Task | None = None
 
         if conversation_id is not None:
             if conversations is None:
@@ -421,6 +448,15 @@ class ChatService:
             task = asyncio.current_task()
             if task is not None:
                 active_streams[conversation.id] = task
+                try:
+                    from core.redis import get_redis_client
+
+                    redis_client = get_redis_client()
+                    cancel_watcher = asyncio.create_task(
+                        watch_redis_cancel(conversation.id, task, redis_client)
+                    )
+                except Exception:
+                    cancel_watcher = None
 
         provider_name, model = await self._selection(
             context, provider_name, model, conversation
@@ -507,7 +543,11 @@ class ChatService:
                 }
                 return
 
-            messages = [ChatMessage(role="system", content=SYSTEM_PROMPT)]
+            memory_block = await self._memory_block(context)
+            sys_prompt = (
+                f"{SYSTEM_PROMPT}\n\n{memory_block}" if memory_block else SYSTEM_PROMPT
+            )
+            messages = [ChatMessage(role="system", content=sys_prompt)]
             if conversation is not None and conversations is not None:
                 for item in conversations.truncate_history(history):
                     if item.role in ("user", "assistant"):
@@ -644,6 +684,8 @@ class ChatService:
                     ),
                     retrieval_diagnostics=diagnostics,
                 )
+            if cancel_watcher is not None:
+                cancel_watcher.cancel()
             if conversation is not None:
                 active_streams.pop(conversation.id, None)
 
