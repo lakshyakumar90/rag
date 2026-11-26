@@ -32,3 +32,12 @@ cp evals/ci/evals.workflow.yml .github/workflows/evals.yml
 git add .github/workflows/evals.yml
 git commit -m "ci(evals): activate GitHub Actions eval regression workflow"
 ```
+
+## Final Re-Verification Summary (`upgrade` branch)
+
+- **Backend End-to-End Wiring (`1273fd5`)**: Wired cognitive `<memory>` injection into `ChatService`, Redis Pub/Sub cancel watcher into `stream_answer` & `/stop`, Resend/SMTP invite email dispatch into `WorkspaceService.invite`, and `decompose_query` / `compare_documents` / `self_critique_answer` into `AgentService.run()`.
+- **Backend Test Suite (`pytest`)**: **104 passed, 0 failed** across 17 test modules; `ruff check` clean; Alembic single linear head `b2c3d4e5f6a7`.
+- **Frontend Verification (`Node v24.1.0`, `pnpm 11.25.0`)**:
+  - `pnpm check-types` (`next typegen && tsc --noEmit`): **Passed** across `@repo/ui` and `web`.
+  - `pnpm build` (Next.js 16 production build): **Passed** — compiled and generated 24/24 static & dynamic routes including `/docs/upgrade`, `/workspaces/[workspaceId]/chat`, `/workspaces/[workspaceId]/evals`, and `/workspaces/[workspaceId]/memory`.
+  - `eslint` on all new/modified UI components and pages: **0 errors, 0 warnings**.

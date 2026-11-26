@@ -3,7 +3,14 @@
 import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, Play, Plus } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  FlaskConical,
+  Play,
+  Plus,
+  TrendingUp,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "../../../../components/ui/badge";
 import { Button } from "../../../../components/ui/button";
@@ -14,6 +21,125 @@ import { api, type EvalRun, type EvalRunDetail } from "../../../../lib/api/clien
 function fmtPct(val: number | null | undefined): string {
   if (val === null || val === undefined) return "—";
   return `${Math.round(val * 100)}%`;
+}
+
+function AccuracyTrendChart({ runs }: { runs: EvalRun[] }) {
+  const ordered = [...runs].reverse().slice(-10);
+  if (ordered.length === 0) return null;
+
+  const width = 640;
+  const height = 180;
+  const padX = 34;
+  const padY = 18;
+  const plotW = width - padX * 2;
+  const plotH = height - padY * 2;
+
+  const series: {
+    key: keyof EvalRun;
+    label: string;
+    color: string;
+  }[] = [
+    { key: "recall_at_k", label: "Recall@5", color: "#0ea5e9" },
+    { key: "faithfulness", label: "Faithfulness", color: "#10b981" },
+    { key: "answer_relevancy", label: "Relevancy", color: "#8b5cf6" },
+    { key: "citation_accuracy", label: "Citation Acc", color: "#f59e0b" },
+  ];
+
+  const xFor = (idx: number) =>
+    ordered.length === 1
+      ? padX + plotW / 2
+      : padX + (idx / (ordered.length - 1)) * plotW;
+  const yFor = (val: number) => padY + (1 - Math.max(0, Math.min(1, val))) * plotH;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-4 text-xs">
+        {series.map((s) => (
+          <span key={s.label} className="inline-flex items-center gap-1.5">
+            <span
+              className="h-2.5 w-2.5 rounded-full"
+              style={{ backgroundColor: s.color }}
+            />
+            <span className="text-muted-foreground">{s.label}</span>
+          </span>
+        ))}
+      </div>
+      <div className="overflow-x-auto rounded-xl border border-border bg-surface/60 p-3">
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          className="h-44 w-full min-w-[420px]"
+          role="img"
+          aria-label="Evaluation accuracy trend chart"
+        >
+          {[0, 0.25, 0.5, 0.75, 1].map((tick) => {
+            const y = yFor(tick);
+            return (
+              <g key={tick}>
+                <line
+                  x1={padX}
+                  x2={width - padX}
+                  y1={y}
+                  y2={y}
+                  stroke="currentColor"
+                  strokeOpacity={0.1}
+                  strokeDasharray="3 3"
+                />
+                <text
+                  x={4}
+                  y={y + 3}
+                  fontSize="9"
+                  fill="currentColor"
+                  opacity={0.5}
+                  fontFamily="monospace"
+                >
+                  {Math.round(tick * 100)}%
+                </text>
+              </g>
+            );
+          })}
+
+          {series.map((s) => {
+            const pts = ordered
+              .map((run, idx) => {
+                const raw = run[s.key];
+                if (typeof raw !== "number") return null;
+                return { x: xFor(idx), y: yFor(raw), val: raw };
+              })
+              .filter(Boolean) as { x: number; y: number; val: number }[];
+            if (pts.length === 0) return null;
+            const d = pts
+              .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+              .join(" ");
+            return (
+              <g key={s.label}>
+                {pts.length > 1 ? (
+                  <path
+                    d={d}
+                    fill="none"
+                    stroke={s.color}
+                    strokeWidth={2.2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                ) : null}
+                {pts.map((p, idx) => (
+                  <circle
+                    key={idx}
+                    cx={p.x}
+                    cy={p.y}
+                    r={3.5}
+                    fill={s.color}
+                    stroke="var(--background)"
+                    strokeWidth={1.5}
+                  />
+                ))}
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+    </div>
+  );
 }
 
 export default function EvalsPage() {
@@ -87,38 +213,96 @@ export default function EvalsPage() {
   const latest = runs[0];
   const detail: EvalRunDetail | undefined = runDetailQuery.data;
 
+  const kpis = [
+    {
+      label: "Recall@5",
+      val: latest?.recall_at_k,
+      accent: "from-sky-500/15 to-transparent border-sky-500/25",
+      bar: "bg-sky-500",
+    },
+    {
+      label: "Faithfulness",
+      val: latest?.faithfulness,
+      accent: "from-emerald-500/15 to-transparent border-emerald-500/25",
+      bar: "bg-emerald-500",
+    },
+    {
+      label: "Answer Relevancy",
+      val: latest?.answer_relevancy,
+      accent: "from-violet-500/15 to-transparent border-violet-500/25",
+      bar: "bg-violet-500",
+    },
+    {
+      label: "Citation Accuracy",
+      val: latest?.citation_accuracy,
+      accent: "from-amber-500/15 to-transparent border-amber-500/25",
+      bar: "bg-amber-500",
+    },
+  ];
+
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold">Evaluation Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
-            Track Recall@5, Faithfulness, Answer Relevancy, and Citation Accuracy across runs.
-          </p>
+      <header className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-accent/10 via-surface to-background p-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-accent/30 bg-accent/15 text-accent">
+              <FlaskConical size={20} />
+            </span>
+            <div>
+              <h1 className="text-xl font-semibold tracking-tight">
+                RAG Evaluation Studio
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Measure retrieval precision and LLM-as-a-Judge faithfulness before shipping changes.
+              </p>
+            </div>
+          </div>
+          <Badge tone="accent">{runs.length} recorded runs</Badge>
         </div>
       </header>
 
-      {/* Top KPI Summary Cards */}
+      {/* Vibrant KPI Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          { label: "Recall@5", value: fmtPct(latest?.recall_at_k) },
-          { label: "Faithfulness", value: fmtPct(latest?.faithfulness) },
-          { label: "Answer Relevancy", value: fmtPct(latest?.answer_relevancy) },
-          { label: "Citation Accuracy", value: fmtPct(latest?.citation_accuracy) },
-        ].map((kpi) => (
-          <Card key={kpi.label} className="p-4">
-            <p className="text-xs font-medium text-muted-foreground">{kpi.label}</p>
-            <p className="mt-1 font-mono text-2xl font-semibold text-foreground">
-              {kpi.value}
-            </p>
-          </Card>
-        ))}
+        {kpis.map((kpi) => {
+          const pctNum =
+            typeof kpi.val === "number" ? Math.round(kpi.val * 100) : 0;
+          return (
+            <Card
+              key={kpi.label}
+              className={`bg-gradient-to-br ${kpi.accent} p-4 transition-transform hover:-translate-y-0.5`}
+            >
+              <p className="text-xs font-medium text-muted-foreground">
+                {kpi.label}
+              </p>
+              <p className="mt-1.5 font-mono text-2xl font-semibold text-foreground">
+                {fmtPct(kpi.val)}
+              </p>
+              <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${kpi.bar}`}
+                  style={{ width: `${pctNum}%` }}
+                />
+              </div>
+            </Card>
+          );
+        })}
       </div>
 
-      {/* Dataset Manager & Trigger */}
+      {/* Multi-Metric Accuracy Trend Chart */}
+      {runs.length > 0 ? (
+        <Card className="space-y-3 p-5">
+          <div className="flex items-center gap-2">
+            <TrendingUp size={16} className="text-accent" />
+            <h2 className="text-sm font-semibold">Accuracy Trends Across Runs</h2>
+          </div>
+          <AccuracyTrendChart runs={runs} />
+        </Card>
+      ) : null}
+
+      {/* Dataset Manager & Case Builder */}
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="space-y-4 p-5">
-          <h2 className="text-sm font-semibold">Datasets</h2>
+          <h2 className="text-sm font-semibold">Golden Datasets</h2>
           <form
             className="flex gap-2"
             onSubmit={(e) => {
@@ -129,7 +313,7 @@ export default function EvalsPage() {
             <Input
               value={datasetName}
               onChange={(e) => setDatasetName(e.target.value)}
-              placeholder="New dataset name (e.g. Golden QA v1)"
+              placeholder="New dataset name (e.g. Golden QA v2)"
             />
             <Button type="submit" size="sm" disabled={createDataset.isPending}>
               <Plus size={14} className="mr-1" /> Create
@@ -145,7 +329,9 @@ export default function EvalsPage() {
               (datasetsQuery.data ?? []).map((ds) => (
                 <div
                   key={ds.id}
-                  className="flex items-center justify-between gap-3 px-3.5 py-2.5 text-sm"
+                  className={`flex items-center justify-between gap-3 px-3.5 py-3 text-sm transition-colors ${
+                    selectedDatasetId === ds.id ? "bg-accent/5" : ""
+                  }`}
                 >
                   <button
                     type="button"
@@ -186,7 +372,11 @@ export default function EvalsPage() {
             <Input
               value={newQuestion}
               onChange={(e) => setNewQuestion(e.target.value)}
-              placeholder="Question to evaluate..."
+              placeholder={
+                selectedDatasetId
+                  ? "Question to evaluate..."
+                  : "Select a dataset on the left first..."
+              }
               disabled={!selectedDatasetId}
             />
             <Input
@@ -206,9 +396,9 @@ export default function EvalsPage() {
         </Card>
       </div>
 
-      {/* Run History & Trend Bars */}
+      {/* Run History Table */}
       <Card className="space-y-4 p-5">
-        <h2 className="text-sm font-semibold">Run History & Accuracy Trends</h2>
+        <h2 className="text-sm font-semibold">Run History</h2>
         {runs.length === 0 ? (
           <p className="text-xs text-muted-foreground">No evaluation runs yet.</p>
         ) : (
@@ -230,8 +420,8 @@ export default function EvalsPage() {
                   <tr
                     key={run.id}
                     onClick={() => setSelectedRunId(run.id)}
-                    className={`cursor-pointer hover:bg-muted/40 ${
-                      selectedRunId === run.id ? "bg-muted/50" : ""
+                    className={`cursor-pointer transition-colors hover:bg-muted/40 ${
+                      selectedRunId === run.id ? "bg-accent/5" : ""
                     }`}
                   >
                     <td className="py-2.5 pr-3 text-foreground">
@@ -268,16 +458,16 @@ export default function EvalsPage() {
           </div>
           <div className="divide-y divide-border rounded-xl border border-border">
             {detail.results.map((res) => (
-              <div key={res.id} className="space-y-1.5 p-3.5 text-xs">
+              <div key={res.id} className="space-y-1.5 p-4 text-xs">
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-medium text-foreground">{res.question}</p>
                   {res.passed ? (
-                    <span className="inline-flex items-center gap-1 text-emerald-600">
-                      <CheckCircle2 size={13} /> Pass
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 font-medium text-emerald-600 dark:text-emerald-400">
+                      <CheckCircle2 size={12} /> Pass
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 text-rose-600">
-                      <AlertTriangle size={13} /> Fail
+                    <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2 py-0.5 font-medium text-rose-600 dark:text-rose-400">
+                      <AlertTriangle size={12} /> Fail
                     </span>
                   )}
                 </div>

@@ -96,6 +96,12 @@ export default function ChatPage() {
   const [editingModel, setEditingModel] = useState(false);
   const [activeSource, setActiveSource] = useState<SourceRef | null>(null);
   const [inspectorDiagnostics, setInspectorDiagnostics] = useState<RetrievalDiagnostics | null>(null);
+  const [splitWidth, setSplitWidth] = useState(42);
+  const promoteEval = useMutation({
+    mutationFn: (messageId: string) => api.promoteMessageToEval(workspaceId, messageId),
+    onSuccess: () => toast.success('Promoted to Feedback Regression Suite'),
+    onError: () => toast.error('Could not promote message to eval'),
+  });
   const snippet = useQuery({
     queryKey: ["citation-snippet", workspaceId, activeSource?.document_id, activeSource?.chunk_id],
     queryFn: () => api.documentSnippet(workspaceId, activeSource!.document_id, activeSource!.chunk_id),
@@ -684,7 +690,7 @@ export default function ChatPage() {
                         votes[message.id] === "up" ? "text-accent" : ""
                       }`}
                     >
-                      <ConfidenceBadge level={message.confidenceLevel} score={message.confidenceScore} breakdown={message.confidenceBreakdown} />{message.retrievalDiagnostics ? (<Button type="button" size="sm" variant="ghost" className="h-6 px-1.5 text-[11px]" onClick={() => setInspectorDiagnostics(message.retrievalDiagnostics ?? null)}>Inspect</Button>) : null}<ThumbsUp size={13} />
+                      <ConfidenceBadge level={message.confidenceLevel} score={message.confidenceScore} breakdown={message.confidenceBreakdown} />{message.retrievalDiagnostics ? (<Button type="button" size="sm" variant="ghost" className="h-6 px-1.5 text-[11px]" onClick={() => setInspectorDiagnostics(message.retrievalDiagnostics ?? null)}>Inspect</Button>) : null}{UUID.test(message.id) ? (<Button type="button" size="sm" variant="ghost" className="h-6 px-1.5 text-[11px]" disabled={promoteEval.isPending} onClick={() => promoteEval.mutate(message.id)}>+ Eval</Button>) : null}<ThumbsUp size={13} />
                     </button>
                     <button
                       type="button"
@@ -809,7 +815,45 @@ export default function ChatPage() {
       </section>
 
       {activeSource ? (
-        <div className="fixed inset-y-0 right-0 z-30 w-full max-w-xl shadow-2xl">
+        <div
+          className="hidden h-full shrink-0 lg:flex"
+          style={{ width: `${splitWidth}%` }}
+        >
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize citation viewer"
+            onMouseDown={(event) => {
+              event.preventDefault();
+              const startX = event.clientX;
+              const startW = splitWidth;
+              const onMove = (moveEvent: MouseEvent) => {
+                const deltaPct = ((startX - moveEvent.clientX) / window.innerWidth) * 100;
+                setSplitWidth(Math.max(28, Math.min(60, Math.round(startW + deltaPct))));
+              };
+              const onUp = () => {
+                window.removeEventListener("mousemove", onMove);
+                window.removeEventListener("mouseup", onUp);
+              };
+              window.addEventListener("mousemove", onMove);
+              window.addEventListener("mouseup", onUp);
+            }}
+            className="w-1.5 cursor-col-resize bg-border/60 transition-colors hover:bg-accent/60"
+          />
+          <div className="min-w-0 flex-1">
+            <CitationSplitViewer
+              source={activeSource}
+              snippet={snippet.data}
+              isPending={snippet.isPending}
+              isError={snippet.isError}
+              onRetry={() => void snippet.refetch()}
+              onClose={() => setActiveSource(null)}
+            />
+          </div>
+        </div>
+      ) : null}
+      {activeSource ? (
+        <div className="fixed inset-y-0 right-0 z-30 w-full max-w-xl shadow-2xl lg:hidden">
           <CitationSplitViewer
             source={activeSource}
             snippet={snippet.data}

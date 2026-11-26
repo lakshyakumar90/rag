@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, Clock, Database, Sparkles, X } from "lucide-react";
+import { Activity, Clock, Database, Layers, Sparkles, X } from "lucide-react";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 
@@ -38,18 +38,27 @@ export function RetrievalInspectorDrawer({ open, diagnostics, onClose }: Props) 
     <div
       role="dialog"
       aria-label="Retrieval Inspector"
-      className="fixed inset-y-0 right-0 z-40 flex w-full max-w-xl flex-col border-l border-border bg-background shadow-2xl"
+      className="fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col border-l border-border bg-background/98 shadow-2xl backdrop-blur-md"
     >
-      <header className="flex items-center justify-between border-b border-border px-5 py-4">
-        <div className="flex items-center gap-2">
-          <Activity size={16} className="text-accent" />
-          <h2 className="text-sm font-semibold">Retrieval Inspector</h2>
+      <header className="flex items-center justify-between border-b border-border bg-gradient-to-r from-accent/5 via-transparent to-transparent px-5 py-4">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-accent/25 bg-accent/10 text-accent">
+            <Activity size={16} />
+          </span>
+          <div>
+            <h2 className="text-sm font-semibold tracking-tight">
+              Retrieval Inspector
+            </h2>
+            <p className="text-[11px] text-muted-foreground">
+              Hybrid RRF, cross-encoder scores & stage telemetry
+            </p>
+          </div>
         </div>
         <Button
           type="button"
           size="icon"
           variant="ghost"
-          className="h-7 w-7"
+          className="h-8 w-8 rounded-lg"
           aria-label="Close retrieval inspector"
           onClick={onClose}
         >
@@ -58,90 +67,135 @@ export function RetrievalInspectorDrawer({ open, diagnostics, onClose }: Props) 
       </header>
 
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5 text-sm">
-        {/* Stage summary badges */}
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={diagnostics.cache_hit ? "accent" : "neutral"}>
-            <Database size={11} className="mr-1" />
-            {diagnostics.cache_hit ? "Cache Hit" : "Cache Miss"}
-          </Badge>
-          <Badge tone={diagnostics.reranked ? "accent" : "neutral"}>
-            <Sparkles size={11} className="mr-1" />
-            {diagnostics.reranked ? "Cross-Encoder Reranked" : "RRF Fallback"}
-          </Badge>
-          {diagnostics.retrieval_ms != null ? (
-            <Badge tone="neutral">
-              <Clock size={11} className="mr-1" />
-              {diagnostics.retrieval_ms.toFixed(1)} ms
-            </Badge>
-          ) : null}
+        {/* Telemetry summary grid */}
+        <div className="grid grid-cols-3 gap-2.5">
+          <div className="rounded-xl border border-border bg-surface p-3">
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <Database size={12} /> Cache
+            </div>
+            <p className="mt-1 text-xs font-semibold text-foreground">
+              {diagnostics.cache_hit ? "Redis Hit" : "Live Query"}
+            </p>
+          </div>
+          <div className="rounded-xl border border-border bg-surface p-3">
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <Sparkles size={12} /> Scorer
+            </div>
+            <p className="mt-1 text-xs font-semibold text-foreground">
+              {diagnostics.reranked ? "Cross-Encoder" : "Calibrated RRF"}
+            </p>
+          </div>
+          <div className="rounded-xl border border-border bg-surface p-3">
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <Clock size={12} /> Latency
+            </div>
+            <p className="mt-1 font-mono text-xs font-semibold text-foreground">
+              {diagnostics.retrieval_ms != null
+                ? `${diagnostics.retrieval_ms.toFixed(1)} ms`
+                : "—"}
+            </p>
+          </div>
         </div>
 
         {/* Rewritten query */}
         {diagnostics.rewritten_query ? (
-          <div className="rounded-xl border border-border bg-muted/30 p-3.5">
-            <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+          <div className="rounded-xl border border-border bg-muted/35 p-3.5">
+            <p className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
               Effective / Rewritten Query
             </p>
-            <p className="mt-1 font-mono text-xs text-foreground">
+            <p className="mt-1.5 font-mono text-xs leading-relaxed text-foreground">
               {diagnostics.rewritten_query}
             </p>
           </div>
         ) : null}
 
-        {/* Per-chunk score breakdown */}
+        {/* Per-chunk score breakdown with visual meters */}
         <div>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Candidate Chunks ({chunks.length})
-          </h3>
+          <div className="mb-2.5 flex items-center justify-between">
+            <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <Layers size={13} /> Ranked Chunks ({chunks.length})
+            </h3>
+            <Badge tone="neutral">Top-K Evidence</Badge>
+          </div>
           {chunks.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-border p-4 text-xs text-muted-foreground">
-              No chunks passed the retrieval threshold for this turn.
+            <p className="rounded-xl border border-dashed border-border p-5 text-center text-xs text-muted-foreground">
+              No chunks passed the calibrated retrieval gate for this turn.
             </p>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-border">
-              <table className="w-full text-left text-xs">
-                <thead className="border-b border-border bg-muted/40 text-[11px] text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2 font-medium">#</th>
-                    <th className="px-3 py-2 font-medium">Document</th>
-                    <th className="px-3 py-2 text-right font-medium">Dense</th>
-                    <th className="px-3 py-2 text-right font-medium">Lexical</th>
-                    <th className="px-3 py-2 text-right font-medium">RRF</th>
-                    <th className="px-3 py-2 text-right font-medium">Rerank</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border font-mono">
-                  {chunks.map((chunk, idx) => (
-                    <tr key={chunk.chunk_id} className="hover:bg-muted/30">
-                      <td className="px-3 py-2 text-muted-foreground">{idx + 1}</td>
-                      <td className="max-w-[180px] truncate px-3 py-2 font-sans">
-                        <span className="font-medium text-foreground">
+            <div className="space-y-2.5">
+              {chunks.map((chunk, idx) => {
+                const finalScore =
+                  chunk.rerank_score != null ? chunk.rerank_score : chunk.score;
+                const barPct = Math.max(
+                  4,
+                  Math.min(100, Math.round(finalScore * 100)),
+                );
+                return (
+                  <div
+                    key={chunk.chunk_id}
+                    className="rounded-xl border border-border bg-surface p-3.5 transition-colors hover:border-accent/40"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-accent/15 font-mono text-[11px] font-semibold text-accent">
+                          {idx + 1}
+                        </span>
+                        <span className="truncate text-xs font-semibold text-foreground">
                           {chunk.filename}
                         </span>
                         {chunk.page_number ? (
-                          <span className="ml-1 text-[11px] text-muted-foreground">
+                          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
                             p.{chunk.page_number}
                           </span>
                         ) : null}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {chunk.dense_rank != null ? `#${chunk.dense_rank}` : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {chunk.lexical_rank != null ? `#${chunk.lexical_rank}` : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {chunk.rrf_score != null ? chunk.rrf_score.toFixed(4) : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-right font-semibold text-foreground">
-                        {chunk.rerank_score != null
-                          ? chunk.rerank_score.toFixed(3)
-                          : chunk.score.toFixed(3)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </div>
+                      <span className="font-mono text-xs font-semibold text-foreground">
+                        {finalScore.toFixed(3)}
+                      </span>
+                    </div>
+
+                    <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-sky-500 to-emerald-500"
+                        style={{ width: `${barPct}%` }}
+                      />
+                    </div>
+
+                    <div className="mt-2.5 flex flex-wrap gap-3 font-mono text-[11px] text-muted-foreground">
+                      <span>
+                        Dense:{" "}
+                        <strong className="text-foreground">
+                          {chunk.dense_rank != null ? `#${chunk.dense_rank}` : "—"}
+                        </strong>
+                      </span>
+                      <span>
+                        Lexical:{" "}
+                        <strong className="text-foreground">
+                          {chunk.lexical_rank != null
+                            ? `#${chunk.lexical_rank}`
+                            : "—"}
+                        </strong>
+                      </span>
+                      <span>
+                        RRF:{" "}
+                        <strong className="text-foreground">
+                          {chunk.rrf_score != null
+                            ? chunk.rrf_score.toFixed(4)
+                            : "—"}
+                        </strong>
+                      </span>
+                      {chunk.rerank_score != null ? (
+                        <span>
+                          Rerank:{" "}
+                          <strong className="text-emerald-600 dark:text-emerald-400">
+                            {chunk.rerank_score.toFixed(3)}
+                          </strong>
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
