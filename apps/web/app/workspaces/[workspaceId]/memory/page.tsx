@@ -17,6 +17,7 @@ import { Badge } from "../../../../components/ui/badge";
 import { Button } from "../../../../components/ui/button";
 import { Card } from "../../../../components/ui/card";
 import { Input } from "../../../../components/ui/input";
+import { CardGridSkeleton } from "../../../../components/ui/skeleton";
 import { api, type MemoryItem, type MemoryTier } from "../../../../lib/api/client";
 
 const TIERS: {
@@ -200,6 +201,7 @@ export default function MemoryPage() {
           </Button>
         </form>
 
+        {memoriesQuery.isLoading ? <CardGridSkeleton cards={3} rows={3} /> : null}
         <div className="space-y-2.5">
           {items.length === 0 ? (
             <p className="rounded-xl border border-dashed border-border p-6 text-center text-xs text-muted-foreground">

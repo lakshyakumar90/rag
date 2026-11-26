@@ -18,8 +18,10 @@ import {
   GitBranch,
   Layers,
   Lock,
+  MessageSquare,
   Moon,
   Network,
+  Server,
   ShieldCheck,
   Sparkles,
   Sun,
@@ -29,6 +31,8 @@ import { useTheme } from "next-themes";
 import { getAccessToken } from "../../lib/auth-client";
 
 gsap.registerPlugin(ScrollTrigger);
+
+type StageTab = "chat" | "evals" | "memory";
 
 type CitationPreview = {
   id: number;
@@ -144,9 +148,38 @@ const PIPELINE_FRAMES = [
   },
 ];
 
+const UPGRADE_DIFF = [
+  {
+    layer: "Retrieval & Gating",
+    before: "Uncalibrated RRF threshold (0.15 vs max 0.0328)",
+    after: "TEI BAAI/bge-reranker-v2-m3 + calibrated cosine/RRF fallback",
+  },
+  {
+    layer: "Chunking & OCR",
+    before: "Flat chunks, single worker queue, English-only FTS",
+    after: "Small-to-Big contextual chunks, ingest-fast/ingest-ocr queues, vision fallback, 'simple' + pg_trgm",
+  },
+  {
+    layer: "Quality & Evals",
+    before: "Offline script only, no live answer confidence",
+    after: "From-scratch Eval Studio, LLM-as-a-Judge, live Confidence SSE & + Eval flywheel",
+  },
+  {
+    layer: "Memory & Graph",
+    before: "Stateless per-conversation history, single-hop search",
+    after: "4-tier Cognitive Memory with conflict superseding + RBAC-safe 2-hop Postgres GraphRAG",
+  },
+  {
+    layer: "Scale & UI",
+    before: "In-process cancel dict, Postgres cache, modal snippets",
+    after: "Redis Pub/Sub cancel, RBAC-scoped TTL cache, resizable Split Citation Viewer & Inspector",
+  },
+];
+
 export function RagLanding() {
   const rootRef = useRef<HTMLDivElement>(null);
   const pipelineRef = useRef<HTMLDivElement>(null);
+  const [stageTab, setStageTab] = useState<StageTab>("chat");
   const [activeCitation, setActiveCitation] = useState<number>(1);
   const [activeFrame, setActiveFrame] = useState<number>(0);
   const [scrollProgress, setScrollProgress] = useState<number>(0);
@@ -166,32 +199,29 @@ export function RagLanding() {
     if (prefersReduced || !rootRef.current) return;
 
     const ctx = gsap.context(() => {
-      // Hero staggered entrance
       gsap.fromTo(
         ".hero-reveal",
-        { y: 28, opacity: 0 },
+        { y: 24, opacity: 0 },
         {
           y: 0,
           opacity: 1,
-          duration: 0.85,
-          stagger: 0.1,
+          duration: 0.8,
+          stagger: 0.09,
           ease: "power3.out",
           clearProps: "transform",
         },
       );
 
-      // Subtle floating motion on ambient orbs
       gsap.to(".ambient-orb", {
-        y: -18,
-        x: 12,
-        duration: 5.5,
+        y: -16,
+        x: 10,
+        duration: 6,
         repeat: -1,
         yoyo: true,
         ease: "sine.inOut",
-        stagger: 1.2,
+        stagger: 1.4,
       });
 
-      // Scroll-scrubbed 4-frame pipeline sequence
       if (pipelineRef.current) {
         ScrollTrigger.create({
           trigger: pipelineRef.current,
@@ -209,36 +239,53 @@ export function RagLanding() {
         });
       }
 
-      // Staggered bento cards reveal on scroll
       gsap.fromTo(
         ".bento-card",
-        { y: 36, opacity: 0, scale: 0.98 },
+        { y: 30, opacity: 0, scale: 0.985 },
         {
           y: 0,
           opacity: 1,
           scale: 1,
-          duration: 0.7,
-          stagger: 0.08,
+          duration: 0.65,
+          stagger: 0.07,
           ease: "power3.out",
           clearProps: "transform",
           scrollTrigger: {
             trigger: ".bento-grid",
-            start: "top 80%",
+            start: "top 82%",
             once: true,
           },
         },
       );
 
-      // Telemetry counters reveal
       gsap.fromTo(
-        ".metric-tile",
-        { y: 24, opacity: 0 },
+        ".diff-row",
+        { y: 18, opacity: 0 },
         {
           y: 0,
           opacity: 1,
-          duration: 0.65,
-          stagger: 0.09,
+          duration: 0.55,
+          stagger: 0.07,
           ease: "power2.out",
+          clearProps: "transform",
+          scrollTrigger: {
+            trigger: ".diff-table",
+            start: "top 82%",
+            once: true,
+          },
+        },
+      );
+
+      gsap.fromTo(
+        ".metric-tile",
+        { y: 20, opacity: 0 },
+        {
+          y: 0,
+          opacity: 1,
+          duration: 0.6,
+          stagger: 0.08,
+          ease: "power2.out",
+          clearProps: "transform",
           scrollTrigger: {
             trigger: ".metrics-strip",
             start: "top 85%",
@@ -260,21 +307,21 @@ export function RagLanding() {
       ref={rootRef}
       className="relative min-h-screen overflow-x-clip bg-background text-foreground selection:bg-accent/25"
     >
-      {/* Ambient Vibrant.design-inspired background gradients */}
+      {/* Subtle theme-consistent ambient backdrop */}
       <div
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
       >
-        <div className="ambient-orb absolute -left-32 -top-24 h-[440px] w-[440px] rounded-full bg-blue-500/12 blur-[110px] dark:bg-blue-500/15" />
-        <div className="ambient-orb absolute -right-24 top-36 h-[420px] w-[420px] rounded-full bg-violet-500/12 blur-[120px] dark:bg-violet-500/15" />
-        <div className="ambient-orb absolute bottom-0 left-1/3 h-[360px] w-[360px] rounded-full bg-emerald-500/8 blur-[120px] dark:bg-emerald-500/10" />
+        <div className="ambient-orb absolute -left-32 -top-24 h-[420px] w-[420px] rounded-full bg-blue-500/10 blur-[110px] dark:bg-blue-500/14" />
+        <div className="ambient-orb absolute -right-24 top-36 h-[400px] w-[400px] rounded-full bg-violet-500/10 blur-[120px] dark:bg-violet-500/14" />
+        <div className="ambient-orb absolute bottom-0 left-1/3 h-[340px] w-[340px] rounded-full bg-emerald-500/8 blur-[120px] dark:bg-emerald-500/10" />
       </div>
 
       {/* Floating Glass Navbar */}
-      <header className="sticky top-0 z-40 border-b border-border/70 bg-background/80 backdrop-blur-xl">
+      <header className="sticky top-0 z-40 border-b border-border/80 bg-background/85 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
           <Link href="/" className="flex items-center gap-2.5">
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-violet-600 text-white shadow-sm">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-accent text-accent-foreground shadow-sm">
               <Sparkles size={16} />
             </span>
             <span className="text-sm font-semibold tracking-tight">
@@ -295,14 +342,14 @@ export function RagLanding() {
             <a href="#capabilities" className="transition-colors hover:text-foreground">
               Capabilities
             </a>
+            <a href="#upgrade-diff" className="transition-colors hover:text-foreground">
+              v2 Upgrades
+            </a>
             <Link href="/docs/upgrade" className="transition-colors hover:text-foreground">
-              Upgrade Docs
+              Docs
             </Link>
             <Link href="/floorplan" className="transition-colors hover:text-foreground">
               Floorplan
-            </Link>
-            <Link href="/docs" className="transition-colors hover:text-foreground">
-              Docs
             </Link>
           </nav>
 
@@ -326,13 +373,13 @@ export function RagLanding() {
                 href="/dashboard"
                 className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-foreground px-3.5 text-xs font-medium text-background transition-transform hover:scale-[1.02]"
               >
-                Open Workspace <ArrowRight size={13} />
+                Dashboard <ArrowRight size={13} />
               </Link>
             ) : (
               <>
                 <Link
                   href="/login"
-                  className="hidden h-8 items-center rounded-lg px-3 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground sm:inline-flex"
+                  className="inline-flex h-8 items-center rounded-lg border border-border bg-surface px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted"
                 >
                   Sign in
                 </Link>
@@ -349,213 +396,363 @@ export function RagLanding() {
       </header>
 
       <main>
-        {/* HERO SECTION */}
-        <section className="mx-auto max-w-6xl px-4 pb-20 pt-14 sm:px-6 sm:pt-20 lg:pt-24">
+        {/* HERO SECTION + MULTI-TAB STAGE-SHOW PRODUCT MOCKUP */}
+        <section className="mx-auto max-w-6xl px-4 pb-20 pt-12 sm:px-6 sm:pt-18 lg:pt-22">
           <div className="mx-auto max-w-3xl text-center">
-            <div className="hero-reveal inline-flex items-center gap-2 rounded-full border border-border bg-surface/90 px-3.5 py-1 text-xs font-medium text-muted-foreground shadow-sm backdrop-blur">
+            <div className="hero-reveal inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3.5 py-1 text-xs font-medium text-muted-foreground shadow-sm">
               <span className="h-2 w-2 rounded-full bg-emerald-500" />
               <span>
-                Hybrid RRF + Cross-Encoder · 4-Tier Memory · Light GraphRAG
+                Production RAG v2 · Cross-Encoder · 4-Tier Memory · Light GraphRAG
               </span>
               <Link
                 href="/docs/upgrade"
                 className="inline-flex items-center gap-0.5 font-semibold text-accent hover:underline"
               >
-                What&apos;s new <ArrowUpRight size={12} />
+                Release Notes <ArrowUpRight size={12} />
               </Link>
             </div>
 
-            <h1 className="hero-reveal mt-6 text-balance text-4xl font-semibold tracking-[-0.035em] text-foreground sm:text-6xl lg:text-[4.25rem] lg:leading-[1.05]">
-              Grounded knowledge,{" "}
+            <h1 className="hero-reveal mt-6 text-balance text-4xl font-semibold tracking-[-0.035em] text-foreground sm:text-6xl lg:text-[4.2rem] lg:leading-[1.05]">
+              Enterprise RAG that{" "}
               <span className="bg-gradient-to-r from-blue-600 via-violet-600 to-emerald-500 bg-clip-text text-transparent dark:from-blue-400 dark:via-violet-400 dark:to-emerald-400">
-                verified to the page.
+                proves every claim.
               </span>
             </h1>
 
             <p className="hero-reveal mx-auto mt-5 max-w-2xl text-pretty text-base leading-relaxed text-muted-foreground sm:text-lg">
-              A multi-tenant, local-first RAG workspace engineered for accuracy.
-              Every answer is reranked, confidence-scored, backed by interactive
-              split-screen citations, and protected by a built-in evaluation
-              engine.
+              Beyond basic vector search. Combine calibrated cross-encoder
+              reranking, Small-to-Big contextual retrieval, 4-tier cognitive
+              memory, 2-hop Postgres GraphRAG, and an integrated LLM-as-a-Judge
+              eval studio in one multi-tenant workspace.
             </p>
 
             <div className="hero-reveal mt-8 flex flex-wrap items-center justify-center gap-3">
               <Link
                 href={isAuthed ? "/dashboard" : "/register"}
-                className="inline-flex h-11 items-center gap-2 rounded-xl bg-foreground px-6 text-sm font-medium text-background shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg"
+                className="inline-flex h-11 items-center gap-2 rounded-xl bg-foreground px-6 text-sm font-medium text-background shadow-md transition-all hover:-translate-y-0.5"
               >
-                {isAuthed ? "Launch Workspace" : "Start Free Workspace"}
+                {isAuthed ? "Open Dashboard" : "Get Started Free"}
                 <ArrowRight size={15} />
               </Link>
               <Link
                 href="/docs/upgrade"
                 className="inline-flex h-11 items-center gap-2 rounded-xl border border-border bg-surface px-5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
               >
-                <BookOpen size={15} /> Read v2 Architecture
+                <BookOpen size={15} /> Read v2 Docs
               </Link>
               <Link
                 href="/floorplan"
-                className="inline-flex h-11 items-center gap-2 rounded-xl border border-border/80 bg-surface/60 px-5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                className="inline-flex h-11 items-center gap-2 rounded-xl border border-border bg-surface/70 px-5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
               >
-                Explore Floorplan <ArrowUpRight size={15} />
+                Architecture Floorplan <ArrowUpRight size={15} />
               </Link>
             </div>
           </div>
 
-          {/* Interactive Hero Split-Screen Showcase */}
-          <div className="hero-reveal mt-14 overflow-hidden rounded-3xl border border-border bg-surface/90 shadow-2xl backdrop-blur-md">
-            {/* Mock Browser Chrome */}
-            <div className="flex items-center justify-between border-b border-border bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
-              <div className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-rose-500/70" />
-                <span className="h-2.5 w-2.5 rounded-full bg-amber-500/70" />
-                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/70" />
-                <span className="ml-2 font-mono text-[11px]">
-                  rag-workspace / engineering / chat
-                </span>
-              </div>
-              <div className="hidden items-center gap-2 sm:flex">
-                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 font-mono text-[10.5px] font-medium text-emerald-700 dark:text-emerald-300">
-                  <ShieldCheck size={11} /> High · 94%
-                </span>
-                <span className="font-mono text-[11px]">
-                  {currentCitation.latencyMs}
-                </span>
-              </div>
+          {/* Stage-Show Interactive Product Mockup Frame */}
+          <div className="hero-reveal mt-12">
+            {/* Stage Mode Switcher */}
+            <div className="mb-3 flex flex-wrap items-center justify-center gap-2">
+              {[
+                { id: "chat" as const, label: "Split Citation Chat", icon: MessageSquare },
+                { id: "evals" as const, label: "Eval Studio & Trends", icon: FlaskConical },
+                { id: "memory" as const, label: "4-Tier Cognitive Memory", icon: Brain },
+              ].map((tab) => {
+                const Icon = tab.icon;
+                const active = stageTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setStageTab(tab.id)}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-all ${
+                      active
+                        ? "border-accent/50 bg-accent text-accent-foreground shadow-sm"
+                        : "border-border bg-surface text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Icon size={13} />
+                    {tab.label}
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="grid lg:grid-cols-12">
-              {/* Left Pane: Grounded Chat Stream */}
-              <div className="flex flex-col justify-between border-b border-border p-5 sm:p-6 lg:col-span-7 lg:border-b-0 lg:border-r">
-                <div className="space-y-4">
-                  <div className="ml-auto max-w-[85%] rounded-2xl rounded-tr-sm bg-foreground px-4 py-2.5 text-sm text-background">
-                    How does RAG Workspace prevent hallucinations, isolate
-                    memory, and handle multi-hop RBAC queries?
-                  </div>
-
-                  <div className="space-y-3 rounded-2xl border border-border bg-background/80 p-4 text-sm leading-7">
-                    <p>
-                      Retrieval fuses top-20 dense and lexical candidates with
-                      RRF and gates answerability using calibrated{" "}
-                      <strong>BAAI/bge-reranker-v2-m3</strong> scores above{" "}
-                      <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-                        0.35
-                      </code>{" "}
-                      <button
-                        type="button"
-                        onClick={() => setActiveCitation(1)}
-                        className={`mx-0.5 inline-flex h-5 items-center rounded-md px-1.5 font-mono text-[11px] font-semibold transition-all ${
-                          activeCitation === 1
-                            ? "bg-accent text-accent-foreground shadow-sm"
-                            : "bg-accent/15 text-accent hover:bg-accent/25"
-                        }`}
-                      >
-                        [1]
-                      </button>
-                      .
-                    </p>
-                    <p>
-                      Durable workspace facts and procedural rules are
-                      reconciled asynchronously with conflict superseding and
-                      placed inside a dedicated{" "}
-                      <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-                        &lt;memory&gt;
-                      </code>{" "}
-                      block isolated from untrusted documents{" "}
-                      <button
-                        type="button"
-                        onClick={() => setActiveCitation(2)}
-                        className={`mx-0.5 inline-flex h-5 items-center rounded-md px-1.5 font-mono text-[11px] font-semibold transition-all ${
-                          activeCitation === 2
-                            ? "bg-accent text-accent-foreground shadow-sm"
-                            : "bg-accent/15 text-accent hover:bg-accent/25"
-                        }`}
-                      >
-                        [2]
-                      </button>
-                      .
-                    </p>
-                    <p>
-                      Cross-document relationships expand via a 2-hop recursive
-                      PostgreSQL CTE filtered by{" "}
-                      <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-                        DocumentGrant
-                      </code>{" "}
-                      permissions{" "}
-                      <button
-                        type="button"
-                        onClick={() => setActiveCitation(3)}
-                        className={`mx-0.5 inline-flex h-5 items-center rounded-md px-1.5 font-mono text-[11px] font-semibold transition-all ${
-                          activeCitation === 3
-                            ? "bg-accent text-accent-foreground shadow-sm"
-                            : "bg-accent/15 text-accent hover:bg-accent/25"
-                        }`}
-                      >
-                        [3]
-                      </button>
-                      .
-                    </p>
-                  </div>
+            <div className="overflow-hidden rounded-3xl border border-border bg-surface shadow-[var(--shadow-panel)]">
+              {/* Browser Window Chrome */}
+              <div className="flex items-center justify-between border-b border-border bg-muted/50 px-4 py-3 text-xs text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-rose-500/75" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-amber-500/75" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/75" />
+                  <span className="ml-2 font-mono text-[11px]">
+                    rag-workspace / engineering / {stageTab}
+                  </span>
                 </div>
-
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-muted-foreground">
-                  <span>Click any [1] [2] [3] pill to inspect live evidence →</span>
-                  <div className="flex items-center gap-1.5 font-mono text-[11px]">
-                    <Activity size={12} className="text-accent" />
-                    <span>Inspector Ready</span>
-                  </div>
+                <div className="hidden items-center gap-2 sm:flex">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 font-mono text-[10.5px] font-medium text-emerald-700 dark:text-emerald-300">
+                    <ShieldCheck size={11} /> High · 94%
+                  </span>
+                  <span className="font-mono text-[11px]">
+                    {currentCitation.latencyMs}
+                  </span>
                 </div>
               </div>
 
-              {/* Right Pane: Interactive Citation Split Viewer */}
-              <div className="flex flex-col justify-between bg-muted/20 p-5 sm:p-6 lg:col-span-5">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="rounded-md bg-accent px-2 py-0.5 font-mono text-xs font-semibold text-accent-foreground">
-                        [{currentCitation.id}]
+              {/* STAGE TAB 1: SPLIT CITATION CHAT */}
+              {stageTab === "chat" ? (
+                <div className="grid lg:grid-cols-12">
+                  <div className="flex flex-col justify-between border-b border-border p-5 sm:p-6 lg:col-span-7 lg:border-b-0 lg:border-r">
+                    <div className="space-y-4">
+                      <div className="ml-auto max-w-[85%] rounded-2xl rounded-tr-sm bg-foreground px-4 py-2.5 text-sm text-background">
+                        How does RAG Workspace prevent hallucinations, isolate
+                        memory, and handle multi-hop RBAC queries?
+                      </div>
+
+                      <div className="space-y-3 rounded-2xl border border-border bg-background p-4 text-sm leading-7">
+                        <p>
+                          Retrieval fuses top-20 dense and lexical candidates
+                          with RRF and gates answerability using calibrated{" "}
+                          <strong>BAAI/bge-reranker-v2-m3</strong> scores above{" "}
+                          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                            0.35
+                          </code>{" "}
+                          <button
+                            type="button"
+                            onClick={() => setActiveCitation(1)}
+                            className={`mx-0.5 inline-flex h-5 items-center rounded-md px-1.5 font-mono text-[11px] font-semibold transition-all ${
+                              activeCitation === 1
+                                ? "bg-accent text-accent-foreground"
+                                : "bg-accent/15 text-accent hover:bg-accent/25"
+                            }`}
+                          >
+                            [1]
+                          </button>
+                          .
+                        </p>
+                        <p>
+                          Durable workspace facts and procedural rules are
+                          reconciled asynchronously with conflict superseding
+                          and placed inside a dedicated{" "}
+                          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                            &lt;memory&gt;
+                          </code>{" "}
+                          block isolated from untrusted documents{" "}
+                          <button
+                            type="button"
+                            onClick={() => setActiveCitation(2)}
+                            className={`mx-0.5 inline-flex h-5 items-center rounded-md px-1.5 font-mono text-[11px] font-semibold transition-all ${
+                              activeCitation === 2
+                                ? "bg-accent text-accent-foreground"
+                                : "bg-accent/15 text-accent hover:bg-accent/25"
+                            }`}
+                          >
+                            [2]
+                          </button>
+                          .
+                        </p>
+                        <p>
+                          Cross-document relationships expand via a 2-hop
+                          recursive PostgreSQL CTE filtered by{" "}
+                          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                            DocumentGrant
+                          </code>{" "}
+                          permissions{" "}
+                          <button
+                            type="button"
+                            onClick={() => setActiveCitation(3)}
+                            className={`mx-0.5 inline-flex h-5 items-center rounded-md px-1.5 font-mono text-[11px] font-semibold transition-all ${
+                              activeCitation === 3
+                                ? "bg-accent text-accent-foreground"
+                                : "bg-accent/15 text-accent hover:bg-accent/25"
+                            }`}
+                          >
+                            [3]
+                          </button>
+                          .
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-muted-foreground">
+                      <span>
+                        Click [1] [2] [3] to jump to highlighted source passages →
                       </span>
-                      <span className="truncate text-sm font-semibold">
-                        {currentCitation.filename}
+                      <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-accent">
+                        <Activity size={12} /> Retrieval Inspector · + Eval
                       </span>
                     </div>
-                    <span className="shrink-0 rounded-md border border-border bg-surface px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
-                      {currentCitation.page}
+                  </div>
+
+                  <div className="flex flex-col justify-between bg-muted/25 p-5 sm:p-6 lg:col-span-5">
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="rounded-md bg-accent px-2 py-0.5 font-mono text-xs font-semibold text-accent-foreground">
+                            [{currentCitation.id}]
+                          </span>
+                          <span className="truncate text-sm font-semibold">
+                            {currentCitation.filename}
+                          </span>
+                        </div>
+                        <span className="shrink-0 rounded-md border border-border bg-surface px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+                          {currentCitation.page}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-muted-foreground">
+                        {currentCitation.heading}
+                      </p>
+
+                      <blockquote className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 text-[13px] leading-6 text-foreground">
+                        {currentCitation.excerpt}
+                      </blockquote>
+                    </div>
+
+                    <div className="mt-5 grid grid-cols-4 gap-2 border-t border-border pt-4 text-center font-mono text-[11px]">
+                      <div className="rounded-lg border border-border bg-surface p-2">
+                        <div className="text-[10px] text-muted-foreground">
+                          Dense
+                        </div>
+                        <div className="font-semibold">
+                          #{currentCitation.denseRank}
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-border bg-surface p-2">
+                        <div className="text-[10px] text-muted-foreground">
+                          Lexical
+                        </div>
+                        <div className="font-semibold">
+                          #{currentCitation.lexicalRank}
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-border bg-surface p-2">
+                        <div className="text-[10px] text-muted-foreground">
+                          RRF
+                        </div>
+                        <div className="font-semibold">
+                          {currentCitation.rrf}
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2 text-emerald-700 dark:text-emerald-300">
+                        <div className="text-[10px] opacity-80">Rerank</div>
+                        <div className="font-semibold">
+                          {currentCitation.rerank}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : stageTab === "evals" ? (
+                /* STAGE TAB 2: EVAL STUDIO MOCKUP */
+                <div className="space-y-5 p-5 sm:p-6">
+                  <div className="grid gap-3 sm:grid-cols-4">
+                    {[
+                      { label: "Recall@5", value: "100%", color: "bg-sky-500", w: "100%" },
+                      { label: "Faithfulness", value: "91%", color: "bg-emerald-500", w: "91%" },
+                      { label: "Relevancy", value: "94%", color: "bg-violet-500", w: "94%" },
+                      { label: "Citation Acc", value: "92%", color: "bg-amber-500", w: "92%" },
+                    ].map((m) => (
+                      <div
+                        key={m.label}
+                        className="rounded-2xl border border-border bg-background p-4"
+                      >
+                        <p className="text-xs text-muted-foreground">{m.label}</p>
+                        <p className="mt-1 font-mono text-2xl font-semibold">
+                          {m.value}
+                        </p>
+                        <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                          <div
+                            className={`h-full rounded-full ${m.color}`}
+                            style={{ width: m.w }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="rounded-2xl border border-border bg-background p-4">
+                    <div className="mb-2 flex items-center justify-between text-xs">
+                      <span className="font-semibold">
+                        CI Regression Gate · evals/evaluate.py --fast --markdown
+                      </span>
+                      <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 font-mono text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                        PASS (0 regressions)
+                      </span>
+                    </div>
+                    <svg
+                      viewBox="0 0 600 120"
+                      className="h-28 w-full"
+                      role="img"
+                      aria-label="Evaluation accuracy sparkline"
+                    >
+                      <path
+                        d="M 20 82 L 130 68 L 240 52 L 350 38 L 460 26 L 580 18"
+                        fill="none"
+                        stroke="#0ea5e9"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                      />
+                      <path
+                        d="M 20 90 L 130 78 L 240 64 L 350 48 L 460 36 L 580 28"
+                        fill="none"
+                        stroke="#10b981"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                      />
+                      <path
+                        d="M 20 96 L 130 84 L 240 72 L 350 54 L 460 40 L 580 32"
+                        fill="none"
+                        stroke="#f59e0b"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </div>
+                </div>
+              ) : (
+                /* STAGE TAB 3: 4-TIER COGNITIVE MEMORY MOCKUP */
+                <div className="grid gap-4 p-5 sm:p-6 md:grid-cols-3">
+                  <div className="rounded-2xl border border-sky-500/25 bg-background p-4 space-y-2.5">
+                    <span className="font-mono text-[11px] font-semibold text-sky-600 dark:text-sky-300">
+                      SEMANTIC FACTS
                     </span>
-                  </div>
-
-                  <p className="text-xs text-muted-foreground">
-                    {currentCitation.heading}
-                  </p>
-
-                  <blockquote className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 text-[13px] leading-6 text-foreground">
-                    {currentCitation.excerpt}
-                  </blockquote>
-                </div>
-
-                <div className="mt-5 grid grid-cols-4 gap-2 border-t border-border pt-4 text-center font-mono text-[11px]">
-                  <div className="rounded-lg border border-border bg-surface p-2">
-                    <div className="text-[10px] text-muted-foreground">Dense</div>
-                    <div className="font-semibold">
-                      #{currentCitation.denseRank}
+                    <div className="rounded-xl border border-border bg-surface p-3 text-xs">
+                      <span className="font-mono text-[10px] text-emerald-600 dark:text-emerald-400">
+                        ACTIVE · 96%
+                      </span>
+                      <p className="mt-1 font-medium">
+                        Production cluster runs on AWS ap-south-1
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-border bg-muted/40 p-3 text-xs opacity-65">
+                      <span className="inline-flex items-center gap-1 font-mono text-[10px] text-muted-foreground">
+                        <GitBranch size={10} /> SUPERSEDED
+                      </span>
+                      <p className="mt-1 line-through">
+                        We deploy on AWS ap-southeast-2
+                      </p>
                     </div>
                   </div>
-                  <div className="rounded-lg border border-border bg-surface p-2">
-                    <div className="text-[10px] text-muted-foreground">Lexical</div>
-                    <div className="font-semibold">
-                      #{currentCitation.lexicalRank}
+                  <div className="rounded-2xl border border-violet-500/25 bg-background p-4 space-y-2.5">
+                    <span className="font-mono text-[11px] font-semibold text-violet-600 dark:text-violet-300">
+                      EPISODIC SUMMARIES
+                    </span>
+                    <div className="rounded-xl border border-border bg-surface p-3 text-xs leading-relaxed text-muted-foreground">
+                      Q2 Architecture Review: Agreed on isolated ingest-ocr
+                      workers (2GB cap) and pg_trgm multilingual search.
                     </div>
                   </div>
-                  <div className="rounded-lg border border-border bg-surface p-2">
-                    <div className="text-[10px] text-muted-foreground">RRF</div>
-                    <div className="font-semibold">{currentCitation.rrf}</div>
-                  </div>
-                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2 text-emerald-700 dark:text-emerald-300">
-                    <div className="text-[10px] opacity-80">Rerank</div>
-                    <div className="font-semibold">{currentCitation.rerank}</div>
+                  <div className="rounded-2xl border border-emerald-500/25 bg-background p-4 space-y-2.5">
+                    <span className="font-mono text-[11px] font-semibold text-emerald-600 dark:text-emerald-300">
+                      PROCEDURAL RULES
+                    </span>
+                    <div className="rounded-xl border border-border bg-surface p-3 text-xs leading-relaxed">
+                      Always cite RFC section numbers and abstain cleanly when
+                      cross-encoder rerank score is below 0.35.
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </section>
@@ -564,7 +761,7 @@ export function RagLanding() {
         <section
           id="pipeline"
           ref={pipelineRef}
-          className="border-y border-border/70 bg-surface/50 py-20 sm:py-28"
+          className="border-y border-border bg-surface/60 py-20 sm:py-28"
         >
           <div className="mx-auto max-w-6xl px-4 sm:px-6">
             <div className="flex flex-wrap items-end justify-between gap-4">
@@ -585,7 +782,7 @@ export function RagLanding() {
                     className="h-full rounded-full bg-accent transition-all duration-150"
                     style={{
                       width: `${Math.max(
-                        12,
+                        15,
                         Math.round(
                           Math.max(
                             scrollProgress,
@@ -600,7 +797,6 @@ export function RagLanding() {
             </div>
 
             <div className="mt-10 grid gap-8 lg:grid-cols-12 lg:items-start">
-              {/* Left Step Rail */}
               <div className="space-y-3 lg:col-span-5">
                 {PIPELINE_FRAMES.map((frame, idx) => {
                   const isActive = idx === activeFrame;
@@ -612,7 +808,7 @@ export function RagLanding() {
                       className={`w-full rounded-2xl border p-4 text-left transition-all duration-300 ${
                         isActive
                           ? "border-accent/50 bg-background shadow-md ring-1 ring-accent/20"
-                          : "border-border/70 bg-surface/60 opacity-70 hover:opacity-100"
+                          : "border-border bg-surface/70 opacity-70 hover:opacity-100"
                       }`}
                     >
                       <div className="flex items-center justify-between">
@@ -636,7 +832,6 @@ export function RagLanding() {
                 })}
               </div>
 
-              {/* Right Animated Frame Stage */}
               <div className="lg:sticky lg:top-24 lg:col-span-7">
                 <div className="relative overflow-hidden rounded-3xl border border-border bg-background p-6 shadow-xl sm:p-8">
                   <div
@@ -662,7 +857,6 @@ export function RagLanding() {
                     {currentFrame.desc}
                   </p>
 
-                  {/* Animated Frame Nodes */}
                   <div className="mt-7 grid gap-3 sm:grid-cols-3">
                     {currentFrame.nodes.map((node, nIdx) => (
                       <div
@@ -695,10 +889,10 @@ export function RagLanding() {
         >
           <div className="max-w-2xl">
             <p className="font-mono text-xs font-semibold uppercase tracking-widest text-accent">
-              Engineered End-to-End
+              Not a Basic RAG Chatbot
             </p>
             <h2 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
-              Every layer built for production teams
+              Built end-to-end for verifiable knowledge work
             </h2>
           </div>
 
@@ -713,7 +907,6 @@ export function RagLanding() {
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                 Pure-Python Recall@K, MRR, and NDCG@K paired with strict-JSON
                 LLM-as-a-Judge faithfulness, relevancy, and citation checks.
-                Blocks accuracy regressions in CI before merge.
               </p>
               <div className="mt-4 flex flex-wrap gap-2 font-mono text-[11px]">
                 <span className="rounded-full border border-border bg-background px-2.5 py-0.5">
@@ -737,8 +930,8 @@ export function RagLanding() {
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                 Semantic facts, episodic summaries, and procedural rules
-                reconciled asynchronously via ARQ. Outdated facts are cleanly
-                superseded instead of creating contradictions.
+                reconciled asynchronously via ARQ with automatic conflict
+                superseding.
               </p>
               <div className="mt-4 inline-flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-1.5 font-mono text-[11px]">
                 <span className="line-through opacity-55">ap-southeast-2</span>
@@ -756,8 +949,7 @@ export function RagLanding() {
               </h3>
               <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
                 1–2 hop recursive SQL CTEs over extracted entity triples—no
-                separate Neo4j cluster required, fully honoring DocumentGrant
-                RBAC.
+                Neo4j cluster required, honoring DocumentGrant RBAC.
               </p>
             </div>
 
@@ -768,8 +960,7 @@ export function RagLanding() {
               </h3>
               <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
                 Redis Pub/Sub stream cancellation across replicas, RBAC-scoped
-                TTL query caching, CIDR proxy validation, and Resend/SMTP
-                invites.
+                TTL query cache, trusted proxy CIDRs, and Resend/SMTP invites.
               </p>
             </div>
 
@@ -780,27 +971,78 @@ export function RagLanding() {
               </h3>
               <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
                 Dual ARQ queues (ingest-fast / ingest-ocr) with vision-LLM
-                table fallback, 8-step query decomposition, and incremental GitHub
-                sync.
+                table fallback, 8-step query decomposition, and incremental
+                GitHub sync.
               </p>
             </div>
           </div>
         </section>
 
-        {/* METRICS STRIP */}
-        <section className="metrics-strip border-y border-border/70 bg-surface/60 py-14">
+        {/* BEFORE vs AFTER v2 UPGRADE COMPARISON */}
+        <section
+          id="upgrade-diff"
+          className="border-y border-border bg-surface/50 py-20"
+        >
+          <div className="mx-auto max-w-6xl px-4 sm:px-6">
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <p className="font-mono text-xs font-semibold uppercase tracking-widest text-accent">
+                  Architecture Evolution
+                </p>
+                <h2 className="mt-2 text-3xl font-semibold tracking-tight">
+                  What changed in Production Upgrade v2
+                </h2>
+              </div>
+              <Link
+                href="/docs/upgrade"
+                className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline"
+              >
+                Full technical changelog <ArrowUpRight size={13} />
+              </Link>
+            </div>
+
+            <div className="diff-table mt-8 overflow-hidden rounded-2xl border border-border bg-background">
+              <div className="grid grid-cols-12 border-b border-border bg-muted/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <div className="col-span-3">Layer</div>
+                <div className="col-span-4">Baseline v1</div>
+                <div className="col-span-5 text-accent">RAG Workspace v2</div>
+              </div>
+              <div className="divide-y divide-border text-xs">
+                {UPGRADE_DIFF.map((row) => (
+                  <div
+                    key={row.layer}
+                    className="diff-row grid grid-cols-1 gap-2 px-4 py-3.5 sm:grid-cols-12 sm:gap-4"
+                  >
+                    <div className="font-semibold text-foreground sm:col-span-3">
+                      {row.layer}
+                    </div>
+                    <div className="text-muted-foreground sm:col-span-4">
+                      {row.before}
+                    </div>
+                    <div className="font-medium text-foreground sm:col-span-5">
+                      {row.after}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* VERIFIED TELEMETRY STRIP */}
+        <section className="metrics-strip py-16">
           <div className="mx-auto grid max-w-6xl gap-4 px-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
             {[
-              { icon: CheckCircle2, value: "104/104", label: "Backend Tests Passing" },
+              { icon: CheckCircle2, value: "104/104", label: "Backend Pytest Suite Passing" },
               { icon: FileSearch, value: "100%", label: "Benchmark Recall@5" },
               { icon: Lock, value: "Zero-Leak", label: "RBAC-Scoped Cache & Graph" },
-              { icon: Layers, value: "24/24", label: "Verified Next.js Routes" },
+              { icon: Server, value: "9 Services", label: "Local-First Docker Compose Stack" },
             ].map((stat) => {
               const Icon = stat.icon;
               return (
                 <div
                   key={stat.label}
-                  className="metric-tile rounded-2xl border border-border bg-background p-5"
+                  className="metric-tile rounded-2xl border border-border bg-surface p-5"
                 >
                   <Icon size={16} className="text-accent" />
                   <p className="mt-3 font-mono text-2xl font-semibold tracking-tight">
@@ -816,21 +1058,22 @@ export function RagLanding() {
         </section>
 
         {/* CLOSING CTA */}
-        <section className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
-          <div className="relative overflow-hidden rounded-3xl border border-border bg-gradient-to-br from-blue-600/15 via-violet-600/10 to-surface p-8 text-center sm:p-14">
-            <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
-              Ready to inspect every citation behind every answer?
+        <section className="mx-auto max-w-6xl px-4 pb-20 sm:px-6">
+          <div className="relative overflow-hidden rounded-3xl border border-border bg-gradient-to-br from-blue-600/12 via-violet-600/8 to-surface p-8 text-center sm:p-14">
+            <Layers size={22} className="mx-auto text-accent" />
+            <h2 className="mt-3 text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
+              Inspect every citation behind every answer.
             </h2>
             <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-              Launch a local-first workspace, explore the interactive floorplan,
-              or read the complete Phase 1–5 engineering upgrade documentation.
+              Create a workspace, run your first evaluation suite, or browse the
+              live v2 architecture documentation and interactive floorplan.
             </p>
             <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
               <Link
                 href={isAuthed ? "/dashboard" : "/register"}
                 className="inline-flex h-11 items-center gap-2 rounded-xl bg-foreground px-6 text-sm font-medium text-background shadow-md transition-transform hover:-translate-y-0.5"
               >
-                {isAuthed ? "Go to Dashboard" : "Create Workspace"}{" "}
+                {isAuthed ? "Dashboard" : "Get Started"}{" "}
                 <ArrowRight size={15} />
               </Link>
               <Link
@@ -844,9 +1087,9 @@ export function RagLanding() {
         </section>
       </main>
 
-      <footer className="border-t border-border/70 py-8 text-xs text-muted-foreground">
+      <footer className="border-t border-border py-8 text-xs text-muted-foreground">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 sm:px-6">
-          <span>RAG Workspace v2 · Local-first grounded knowledge engine</span>
+          <span>RAG Workspace v2 · Multi-tenant grounded knowledge engine</span>
           <div className="flex items-center gap-5">
             <Link href="/docs" className="hover:text-foreground">
               Docs
@@ -857,8 +1100,11 @@ export function RagLanding() {
             <Link href="/floorplan" className="hover:text-foreground">
               Floorplan
             </Link>
-            <Link href="/login" className="hover:text-foreground">
-              Sign in
+            <Link
+              href={isAuthed ? "/dashboard" : "/login"}
+              className="hover:text-foreground"
+            >
+              {isAuthed ? "Dashboard" : "Sign in"}
             </Link>
           </div>
         </div>

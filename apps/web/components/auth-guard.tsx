@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../lib/auth/auth-provider";
+import { WorkspacePageSkeleton } from "./ui/skeleton";
 
 /** Client-side route guard for authenticated pages. */
 export function AuthGuard({ children }: { children: React.ReactNode }) {
@@ -14,7 +15,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   }, [isLoading, isAuthenticated, router]);
 
   if (isLoading) {
-    return <div className="p-8 text-muted-foreground">Loading…</div>;
+    return <WorkspacePageSkeleton />;
   }
   if (!isAuthenticated) return null;
   return <>{children}</>;

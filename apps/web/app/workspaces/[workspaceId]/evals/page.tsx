@@ -16,6 +16,7 @@ import { Badge } from "../../../../components/ui/badge";
 import { Button } from "../../../../components/ui/button";
 import { Card } from "../../../../components/ui/card";
 import { Input } from "../../../../components/ui/input";
+import { CardGridSkeleton } from "../../../../components/ui/skeleton";
 import { api, type EvalRun, type EvalRunDetail } from "../../../../lib/api/client";
 
 function fmtPct(val: number | null | undefined): string {
@@ -260,6 +261,10 @@ export default function EvalsPage() {
           <Badge tone="accent">{runs.length} recorded runs</Badge>
         </div>
       </header>
+
+      {datasetsQuery.isLoading || runsQuery.isLoading ? (
+        <CardGridSkeleton cards={4} rows={4} />
+      ) : null}
 
       {/* Vibrant KPI Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
